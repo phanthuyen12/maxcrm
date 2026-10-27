@@ -120,8 +120,12 @@ export class ConversationsService {
   async update(id: string, dto: UpdateConversationDto, userId: string, role: string) {
     const current = await this.findOne(id, userId, role);
     await this.assertChannelAccess(current.zaloOA.id, userId, false, role);
-    if (dto.assignedToId !== undefined && dto.assignedToId !== null) {
-      const assignee = await this.prisma.user.findUnique({ where: { id: dto.assignedToId }, select: { id: true, isActive: true } });
+    const updateData: UpdateConversationDto = { ...dto };
+    if (role === 'CHAT' && dto.status === 'PROCESSING' && !current.assignedTo) {
+      updateData.assignedToId = userId;
+    }
+    if (updateData.assignedToId !== undefined && updateData.assignedToId !== null) {
+      const assignee = await this.prisma.user.findUnique({ where: { id: updateData.assignedToId }, select: { id: true, isActive: true } });
       if (!assignee?.isActive) throw new NotFoundException('Không tìm thấy nhân viên đang hoạt động');
       if (role !== 'ADMIN') {
         const assigneeAccess = await this.prisma.oAStaffAccess.findUnique({ where: { userId_zaloOAId: { userId: assignee.id, zaloOAId: current.zaloOA.id } } });
@@ -130,7 +134,7 @@ export class ConversationsService {
     }
     const conversation = await this.prisma.conversation.update({
       where: { id },
-      data: dto as any,
+      data: updateData as any,
       include: conversationInclude,
     });
     this.gateway.emitConversationUpdate(conversation);

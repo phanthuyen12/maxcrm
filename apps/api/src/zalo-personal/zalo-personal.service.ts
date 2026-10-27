@@ -4,6 +4,7 @@ import { imageMetadataGetter } from './image-metadata';
 import { getZaloGroupProfile, getZaloUserProfile, invalidateZaloGroupProfile } from './zalo-user-profile';
 import { PrismaService } from '../prisma/prisma.service';
 import { InboxGateway } from '../gateway/inbox.gateway';
+import { getZaloImageUrl, isZaloImageMessage } from './zalo-image';
 
 function messageContent(value: unknown): string {
   if (typeof value === 'string') return value;
@@ -186,6 +187,8 @@ export class PersonalZaloService implements OnModuleDestroy {
         });
       }
       const text = messageContent(data?.content);
+      const imageUrl = isZaloImageMessage(data?.msgType, data?.content) ? getZaloImageUrl(data?.content) : null;
+      const messageType = imageUrl ? 'IMAGE' : 'TEXT';
       const eventTimestamp = Number(data?.ts);
       const sentAt = Number.isFinite(eventTimestamp) && eventTimestamp > 0
         ? new Date(eventTimestamp < 10_000_000_000 ? eventTimestamp * 1000 : eventTimestamp)
@@ -200,9 +203,9 @@ export class PersonalZaloService implements OnModuleDestroy {
         const pending = await this.prisma.message.findFirst({ where: { conversationId: conversation.id, direction: 'OUT', content: text, sentAt: { gte: new Date(Date.now() - 120_000) } }, orderBy: { sentAt: 'desc' } });
         persistedMessage = pending
           ? await this.prisma.message.update({ where: { id: pending.id }, data: { status: 'SENT', sentAt } })
-          : await this.prisma.message.create({ data: { conversationId: conversation.id, direction: 'OUT', type: 'TEXT', content: text, status: 'SENT', sentAt } });
+          : await this.prisma.message.create({ data: { conversationId: conversation.id, direction: 'OUT', type: messageType, content: imageUrl ? '' : text, ...(imageUrl ? { attachmentUrl: imageUrl } : {}), status: 'SENT', sentAt } });
       } else {
-        persistedMessage = await this.prisma.message.create({ data: { conversationId: conversation.id, direction: 'IN', type: 'TEXT', content: text, status: 'SENT', sentAt,
+        persistedMessage = await this.prisma.message.create({ data: { conversationId: conversation.id, direction: 'IN', type: messageType, content: imageUrl ? '' : text, ...(imageUrl ? { attachmentUrl: imageUrl } : {}), status: 'SENT', sentAt,
           ...(isGroup && externalSenderId ? { externalSenderId, externalSenderName: eventDisplayName || undefined } : {}) } });
       }
       if (externalId) {
@@ -210,6 +213,7 @@ export class PersonalZaloService implements OnModuleDestroy {
         if (this.seenMessageIds.size > 10_000) this.seenMessageIds.clear();
       }
       this.gateway.emitNewMessage(conversation.id, persistedMessage);
+      if (!isSelf) await this.gateway.notifyAssignedUser(conversation.id, persistedMessage);
       const updated = await this.prisma.conversation.findUnique({
         where: { id: conversation.id },
         include: {

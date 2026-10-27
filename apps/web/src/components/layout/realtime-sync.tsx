@@ -27,10 +27,12 @@ export function RealtimeSync() {
       queryClient.invalidateQueries({ queryKey: ['reports'] });
       queryClient.invalidateQueries({ queryKey: ['tasks'] });
     };
+    const onNotificationNew = () => queryClient.invalidateQueries({ queryKey: ['notifications'] });
 
     socket.on('message:new', onMessageNew);
     socket.on('conversation:update', onConversationUpdate);
     socket.on('stats:update', onStatsUpdate);
+    socket.on('notification:new', onNotificationNew);
     window.addEventListener('pointerdown', unlock, { once: true });
     window.addEventListener('keydown', unlock, { once: true });
 
@@ -38,6 +40,7 @@ export function RealtimeSync() {
       socket.off('message:new', onMessageNew);
       socket.off('conversation:update', onConversationUpdate);
       socket.off('stats:update', onStatsUpdate);
+      socket.off('notification:new', onNotificationNew);
       window.removeEventListener('pointerdown', unlock);
       window.removeEventListener('keydown', unlock);
     };

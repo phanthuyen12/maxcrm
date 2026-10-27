@@ -123,6 +123,15 @@ export interface Message {
   sender: UserSummary | null;
 }
 
+export interface UserNotification {
+  id: string;
+  title: string;
+  content: string;
+  isRead: boolean;
+  createdAt: string;
+  conversation: { id: string; customer: { name: string } };
+}
+
 export type DealStage = 'NEW' | 'CONSULTING' | 'POTENTIAL' | 'WON' | 'LOST';
 
 export interface Deal {
@@ -175,6 +184,7 @@ export interface EngagementPoint {
 }
 
 export interface StaffPerformance extends UserSummary {
+  sentMessages: number;
   resolvedConversations: number;
   wonDeals: number;
   totalDeals: number;

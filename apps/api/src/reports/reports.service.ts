@@ -154,13 +154,14 @@ export class ReportsService {
 
     const result = await Promise.all(
       users.map(async (u) => {
-        const [resolvedConversations, wonDeals, totalDeals, pendingTasks] = await Promise.all([
+        const [resolvedConversations, sentMessages, wonDeals, totalDeals, pendingTasks] = await Promise.all([
           this.prisma.conversation.count({ where: { assignedToId: u.id, status: 'RESOLVED' } }),
+          this.prisma.message.count({ where: { senderId: u.id, direction: 'OUT' } }),
           this.prisma.deal.count({ where: { ownerId: u.id, stage: 'WON' } }),
           this.prisma.deal.count({ where: { ownerId: u.id } }),
           this.prisma.task.count({ where: { assigneeId: u.id, status: 'TODO' } }),
         ]);
-        return { ...u, resolvedConversations, wonDeals, totalDeals, pendingTasks };
+        return { ...u, resolvedConversations, sentMessages, wonDeals, totalDeals, pendingTasks };
       }),
     );
 

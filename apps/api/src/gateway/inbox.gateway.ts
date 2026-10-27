@@ -66,6 +66,23 @@ export class InboxGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (conversation) await this.emitToChannel(conversation.zaloOAId, 'message:new', message);
   }
 
+  async notifyAssignedUser(conversationId: string, message: { content?: string }) {
+    const conversation = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+      select: { assignedToId: true, customer: { select: { name: true } } },
+    });
+    if (!conversation?.assignedToId) return;
+    const notification = await this.prisma.notification.create({
+      data: {
+        userId: conversation.assignedToId,
+        conversationId,
+        title: `Tin nhắn mới từ ${conversation.customer.name}`,
+        content: String(message.content ?? '').slice(0, 1000),
+      },
+    });
+    if (this.server) this.server.to(`user:${conversation.assignedToId}`).emit('notification:new', notification);
+  }
+
   async emitConversationUpdate(conversation: any) {
     const channelId = conversation?.zaloOAId ?? conversation?.zaloOA?.id ?? (conversation?.id ? (await this.prisma.conversation.findUnique({ where: { id: conversation.id }, select: { zaloOAId: true } }))?.zaloOAId : undefined);
     await this.emitToChannel(channelId, 'conversation:update', conversation);

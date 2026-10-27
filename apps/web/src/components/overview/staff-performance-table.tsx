@@ -33,6 +33,7 @@ export function StaffPerformanceTable() {
               <TableRow>
                 <TableHead>Nhân viên</TableHead>
                   <TableHead className="whitespace-nowrap">Hội thoại đã xử lý</TableHead>
+                  <TableHead className="whitespace-nowrap">Tin nhắn đã gửi</TableHead>
                   <TableHead className="whitespace-nowrap">Deal chốt thành công</TableHead>
                   <TableHead className="whitespace-nowrap">Công việc đang chờ</TableHead>
               </TableRow>
@@ -49,6 +50,7 @@ export function StaffPerformanceTable() {
                     </div>
                   </TableCell>
                   <TableCell className="tabular-nums">{staff.resolvedConversations}</TableCell>
+                  <TableCell className="tabular-nums">{staff.sentMessages}</TableCell>
                   <TableCell>
                     <span className="tabular-nums">{staff.wonDeals}/{staff.totalDeals}</span>
                   </TableCell>

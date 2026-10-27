@@ -119,6 +119,7 @@ export class WebhooksService {
 
     this.gateway.emitNewMessage(conversationId, message);
     this.gateway.emitConversationUpdate(updated);
+    await this.gateway.notifyAssignedUser(conversationId, message);
 
     return message;
   }

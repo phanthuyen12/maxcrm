@@ -83,49 +83,50 @@ enum TaskPriority {
 }
 
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  passwordHash String
-  name         String
-  avatar       String?
-  role         Role     @default(AGENT)
-  isActive     Boolean  @default(true)
+  id                 String   @id @default(cuid())
+  email              String   @unique
+  passwordHash       String
+  name               String
+  avatar             String?
+  role               Role     @default(AGENT)
+  isActive           Boolean  @default(true)
   isAcceptingChats   Boolean  @default(true)
   maxConcurrentChats Int      @default(20)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
-  assignedCustomers Customer[]     @relation("CustomerAssignee")
-  conversations     Conversation[] @relation("ConversationAssignee")
-  sentMessages      Message[]      @relation("MessageSender")
-  tasks             Task[]         @relation("TaskAssignee")
-  notes             Note[]         @relation("NoteAuthor")
-  appointments      Appointment[]  @relation("AppointmentStaff")
-  deals             Deal[]         @relation("DealOwner")
+  assignedCustomers Customer[]        @relation("CustomerAssignee")
+  conversations     Conversation[]    @relation("ConversationAssignee")
+  sentMessages      Message[]         @relation("MessageSender")
+  tasks             Task[]            @relation("TaskAssignee")
+  notes             Note[]            @relation("NoteAuthor")
+  appointments      Appointment[]     @relation("AppointmentStaff")
+  deals             Deal[]            @relation("DealOwner")
   templates         MessageTemplate[] @relation("TemplateCreatedBy")
   oaAccess          OAStaffAccess[]
-  activityLogs      ActivityLog[]  @relation("ActivityActor")
+  activityLogs      ActivityLog[]     @relation("ActivityActor")
+  notifications     Notification[]
 
   @@index([role])
 }
 
 model ZaloOA {
-  id                 String   @id @default(cuid())
-  name               String
-  avatar             String?
-  zaloOaId           String   @unique
-  status             OAStatus @default(DISCONNECTED)
-  lastSyncAt         DateTime?
-  dailyMessageLimit  Int      @default(500)
-  messagesSentToday  Int      @default(0)
-  webhookSecret      String?
-  webhookVerifiedAt  DateTime?
-  provider           ChannelProvider @default(ZALO)
-  externalId         String?
-  accessToken        String?  @db.Text
-  appSecret          String?  @db.Text
-  botUsername        String?
-  createdAt          DateTime @default(now())
+  id                String          @id @default(cuid())
+  name              String
+  avatar            String?
+  zaloOaId          String          @unique
+  status            OAStatus        @default(DISCONNECTED)
+  lastSyncAt        DateTime?
+  dailyMessageLimit Int             @default(500)
+  messagesSentToday Int             @default(0)
+  webhookSecret     String?
+  webhookVerifiedAt DateTime?
+  provider          ChannelProvider @default(ZALO)
+  externalId        String?
+  accessToken       String?         @db.Text
+  appSecret         String?         @db.Text
+  botUsername       String?
+  createdAt         DateTime        @default(now())
 
   conversations Conversation[]
   staffAccess   OAStaffAccess[]
@@ -178,7 +179,7 @@ model Customer {
   createdAt    DateTime       @default(now())
   updatedAt    DateTime       @updatedAt
 
-  assignedTo    User?           @relation("CustomerAssignee", fields: [assignedToId], references: [id])
+  assignedTo    User?          @relation("CustomerAssignee", fields: [assignedToId], references: [id])
   tags          CustomerTag[]
   notes         Note[]
   appointments  Appointment[]
@@ -240,19 +241,20 @@ model Appointment {
 }
 
 model Conversation {
-  id           String             @id @default(cuid())
-  customerId   String
-  zaloOAId     String
-  assignedToId String?
-  isPinned     Boolean            @default(false)
-  status       ConversationStatus @default(UNREAD)
-  lastMessageAt DateTime          @default(now())
-  createdAt    DateTime           @default(now())
+  id            String             @id @default(cuid())
+  customerId    String
+  zaloOAId      String
+  assignedToId  String?
+  isPinned      Boolean            @default(false)
+  status        ConversationStatus @default(UNREAD)
+  lastMessageAt DateTime           @default(now())
+  createdAt     DateTime           @default(now())
 
-  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  zaloOA     ZaloOA   @relation(fields: [zaloOAId], references: [id])
-  assignedTo User?    @relation("ConversationAssignee", fields: [assignedToId], references: [id])
-  messages   Message[]
+  customer      Customer       @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  zaloOA        ZaloOA         @relation(fields: [zaloOAId], references: [id])
+  assignedTo    User?          @relation("ConversationAssignee", fields: [assignedToId], references: [id])
+  messages      Message[]
+  notifications Notification[]
 
   @@unique([customerId, zaloOAId])
   @@index([status])
@@ -261,24 +263,40 @@ model Conversation {
 }
 
 model Message {
-  id             String           @id @default(cuid())
-  conversationId String
-  direction      MessageDirection
-  type           MessageType      @default(TEXT)
-  content        String           @db.Text
-  attachmentUrl  String?
+  id                   String           @id @default(cuid())
+  conversationId       String
+  direction            MessageDirection
+  type                 MessageType      @default(TEXT)
+  content              String           @db.Text
+  attachmentUrl        String?
   externalSenderId     String?
   externalSenderName   String?
-  externalSenderAvatar String? @db.Text
-  senderId       String?
-  status         MessageStatus    @default(SENT)
-  sentAt         DateTime         @default(now())
+  externalSenderAvatar String?          @db.Text
+  senderId             String?
+  status               MessageStatus    @default(SENT)
+  sentAt               DateTime         @default(now())
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  sender       User?         @relation("MessageSender", fields: [senderId], references: [id])
+  sender       User?        @relation("MessageSender", fields: [senderId], references: [id])
 
   @@index([conversationId])
   @@index([sentAt])
+}
+
+model Notification {
+  id             String   @id @default(cuid())
+  userId         String
+  conversationId String
+  title          String
+  content        String   @db.Text
+  isRead         Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead, createdAt])
+  @@index([conversationId])
 }
 
 model MessageTemplate {

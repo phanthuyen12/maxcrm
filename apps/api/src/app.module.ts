@@ -18,6 +18,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
 import { CatalogModule } from './catalog/catalog.module';
 import { SocialChannelsModule } from './social-channels/social-channels.module';
 import { BackupModule } from './backup/backup.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { BackupModule } from './backup/backup.module';
     CatalogModule,
     SocialChannelsModule,
     BackupModule,
+    NotificationsModule,
   ],
 })
 export class AppModule {}

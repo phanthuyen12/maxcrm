@@ -4,6 +4,7 @@ import { Message } from '@/lib/types';
 
 export function MessageBubble({ message }: { message: Message }) {
   const isOut = message.direction === 'OUT';
+  const inlineImage = message.attachmentUrl ?? (isDirectImageUrl(message.content) ? message.content.trim() : null);
 
   return (
     <div className={cn('flex', isOut ? 'justify-end' : 'justify-start')}>
@@ -12,18 +13,20 @@ export function MessageBubble({ message }: { message: Message }) {
           {message.externalSenderAvatar && <img src={message.externalSenderAvatar} alt="" className="h-4 w-4 shrink-0 rounded-full object-cover" />}
           <span className="truncate" title={message.externalSenderName}>{message.externalSenderName}</span>
         </div>}
+        {isOut && message.sender?.name && <div className="max-w-full truncate px-1 text-[11px] font-medium text-muted-foreground" title={`Gửi bởi ${message.sender.name}`}>{message.sender.name}</div>}
         <div
           className={cn(
             'max-w-full break-words rounded-2xl px-3.5 py-2 text-sm leading-[1.5] [overflow-wrap:anywhere]',
             isOut ? 'rounded-br-sm bg-primary text-primary-foreground' : 'rounded-bl-sm border border-border/70 bg-white text-foreground',
           )}
         >
-          {message.content}
+          {!(inlineImage && isDirectImageUrl(message.content)) && message.content}
           {message.attachmentUrl && (
             <a href={message.attachmentUrl} target="_blank" rel="noreferrer" className="mt-2 block underline underline-offset-2">
-              {message.type === 'IMAGE' ? <img src={message.attachmentUrl} alt={message.content || 'Ảnh đính kèm'} className="max-h-56 max-w-full rounded-lg object-contain" /> : `Tải tệp: ${message.content || 'Tệp đính kèm'}`}
+              {message.type === 'IMAGE' || inlineImage ? <img src={inlineImage ?? message.attachmentUrl} alt={message.content || 'Ảnh đính kèm'} className="max-h-72 max-w-full rounded-lg object-contain" /> : `Tải tệp: ${message.content || 'Tệp đính kèm'}`}
             </a>
           )}
+          {!message.attachmentUrl && inlineImage && <a href={inlineImage} target="_blank" rel="noreferrer" className="mt-2 block"><img src={inlineImage} alt="Ảnh khách gửi" className="max-h-72 max-w-full rounded-lg object-contain" /></a>}
         </div>
         <div
           className={cn(
@@ -37,6 +40,16 @@ export function MessageBubble({ message }: { message: Message }) {
       </div>
     </div>
   );
+}
+
+function isDirectImageUrl(value: string): boolean {
+  try {
+    const url = new URL(value.trim());
+    return ['http:', 'https:'].includes(url.protocol)
+      && (/\.(jpe?g|png|gif|webp|bmp|avif)$/i.test(url.pathname) || url.hostname.endsWith('.zdn.vn'));
+  } catch {
+    return false;
+  }
 }
 
 function MessageStatusIcon({ status }: { status: Message['status'] }) {

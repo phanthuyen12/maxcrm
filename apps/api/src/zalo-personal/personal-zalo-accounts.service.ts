@@ -6,6 +6,7 @@ import { imageMetadataGetter } from './image-metadata';
 import { getZaloGroupProfile, getZaloUserProfile, invalidateZaloGroupProfile } from './zalo-user-profile';
 import { PrismaService } from '../prisma/prisma.service';
 import { InboxGateway } from '../gateway/inbox.gateway';
+import { getZaloImageUrl, isZaloImageMessage } from './zalo-image';
 
 const HttpsProxyAgent: new (proxyUrl: string) => any = require('https-proxy-agent').HttpsProxyAgent;
 const SocksProxyAgent: new (proxyUrl: string) => any = require('socks-proxy-agent').SocksProxyAgent;
@@ -647,6 +648,8 @@ export class PersonalZaloAccountsService implements OnModuleDestroy {
       source: 'Zalo cá nhân',
     } });
     const text = messageContent(data?.content);
+    const imageUrl = isZaloImageMessage(data?.msgType, data?.content) ? getZaloImageUrl(data?.content) : null;
+    const messageType = imageUrl ? 'IMAGE' : 'TEXT';
     const sentAt = this.eventDate(data?.ts);
     const conversation = await this.prisma.conversation.upsert({ where: { customerId_zaloOAId: { customerId: customer.id, zaloOAId: channel.id } },
       update: { ...(isSelf ? {} : { status: 'UNREAD' as const }), lastMessageAt: sentAt }, create: { customerId: customer.id, zaloOAId: channel.id, status: isSelf ? 'PROCESSING' : 'UNREAD', lastMessageAt: sentAt } });
@@ -655,9 +658,9 @@ export class PersonalZaloAccountsService implements OnModuleDestroy {
       const pending = await this.prisma.message.findFirst({ where: { conversationId: conversation.id, direction: 'OUT', content: text, sentAt: { gte: new Date(Date.now() - 120_000) } }, orderBy: { sentAt: 'desc' } });
       message = pending
         ? await this.prisma.message.update({ where: { id: pending.id }, data: { status: 'SENT', sentAt } })
-        : await this.prisma.message.create({ data: { conversationId: conversation.id, direction: 'OUT', type: 'TEXT', content: text, status: 'SENT', sentAt } });
+        : await this.prisma.message.create({ data: { conversationId: conversation.id, direction: 'OUT', type: messageType, content: imageUrl ? '' : text, ...(imageUrl ? { attachmentUrl: imageUrl } : {}), status: 'SENT', sentAt } });
     } else {
-      message = await this.prisma.message.create({ data: { conversationId: conversation.id, direction: 'IN', type: 'TEXT', content: text, status: 'SENT', sentAt,
+      message = await this.prisma.message.create({ data: { conversationId: conversation.id, direction: 'IN', type: messageType, content: imageUrl ? '' : text, ...(imageUrl ? { attachmentUrl: imageUrl } : {}), status: 'SENT', sentAt,
         ...(isGroup && externalSenderId ? { externalSenderId, externalSenderName: eventDisplayName || undefined } : {}) } });
     }
     if (dedupeKey) {
@@ -666,6 +669,7 @@ export class PersonalZaloAccountsService implements OnModuleDestroy {
     }
     this.gateway.emitNewMessage(conversation.id, message);
     this.gateway.emitConversationUpdate({ ...conversation, zaloOAId: channel.id });
+    if (!isSelf) await this.gateway.notifyAssignedUser(conversation.id, message);
     if (!isSelf && activeApi && (isGroup || shouldLookupProfile)) {
       void this.enrichInboundMessage({ api: activeApi, accountId, groupId: isGroup ? threadId : undefined, customerId: customer.id, conversationId: conversation.id, messageId: message.id, channelId: channel.id, senderId: externalSenderId, isGroup })
         .catch((error) => console.error(`Zalo profile refresh failed (${accountId}):`, error));

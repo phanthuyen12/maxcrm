@@ -24,6 +24,7 @@ import {
 } from '@/hooks/use-conversations';
 import { initials } from '@/lib/utils';
 import { api } from '@/lib/api';
+import { useCurrentUser } from '@/hooks/use-current-user';
 
 const STATUS_LABEL: Record<string, { label: string; variant: 'default' | 'warning' | 'success' }> = {
   UNREAD: { label: 'Chưa đọc', variant: 'warning' },
@@ -33,6 +34,7 @@ const STATUS_LABEL: Record<string, { label: string; variant: 'default' | 'warnin
 
 export function ChatPanel({ conversationId, onBack, onShowCustomer, customerOpen }: { conversationId: string | null; onBack: () => void; onShowCustomer: () => void; customerOpen: boolean }) {
   const { data: conversation, isLoading: convLoading } = useConversation(conversationId);
+  const { data: currentUser } = useCurrentUser();
   const { data: messages, isLoading, isError, refetch } = useConversationMessages(conversationId);
   const sendMessage = useSendMessage(conversationId ?? '');
   const updateConversation = useUpdateConversation(conversationId ?? '');
@@ -54,11 +56,14 @@ export function ChatPanel({ conversationId, onBack, onShowCustomer, customerOpen
   }, [content]);
 
   React.useEffect(() => {
-    if (conversation && conversation.status === 'UNREAD' && conversationId) {
+    if (conversation && conversationId && (
+      conversation.status === 'UNREAD'
+      || (currentUser?.role === 'CHAT' && conversation.status === 'PROCESSING' && !conversation.assignedTo)
+    )) {
       updateConversation.mutate({ status: 'PROCESSING' });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversation?.id]);
+  }, [conversation?.id, conversation?.status, conversation?.assignedTo?.id, currentUser?.role]);
 
   if (!conversationId) {
     return (
