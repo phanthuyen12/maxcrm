@@ -1,0 +1,36 @@
+diff --git a/dist/cjs/apis/loginQR.cjs b/dist/cjs/apis/loginQR.cjs
+index dbd08ed872fbcd4e708b3164f19c84d0ce16928f..f1a09444c65fa30c766cabfb66c04c088ec32a2c 100644
+--- a/dist/cjs/apis/loginQR.cjs
++++ b/dist/cjs/apis/loginQR.cjs
+@@ -353,8 +353,8 @@ async function loginQR(ctx, options, callback) {
+             const userInfo = await getUserInfo(ctx);
+             if (!userInfo || !userInfo.data)
+                 throw new ZaloApiError.ZaloApiError("Can't get account info");
+-            if (!userInfo.data.logged)
+-                throw new ZaloApiError.ZaloApiError("Can't login");
++        // QR confirmation and checkSession already verified the login. The
++        // legacy `logged` flag is not reliable for current Zalo responses.
+             resolve({
+                 cookies: ctx.cookie.toJSON().cookies,
+                 userInfo: userInfo.data.info,
+diff --git a/dist/cjs/zalo.cjs b/dist/cjs/zalo.cjs
+index caecbf4fc7d28780fefda8cb90ed24ff926e6c9c..e37e563376ea947cb8cdc3df2cd04abf5b6b5d65 100644
+--- a/dist/cjs/zalo.cjs
++++ b/dist/cjs/zalo.cjs
+@@ -59,9 +59,13 @@ class Zalo {
+         ctx.language = credentials.language || "vi";
+         const loginData = await login.login(ctx, this.enableEncryptParam);
+         const serverInfo = await login.getServerInfo(ctx, this.enableEncryptParam);
+-        const loginInfo = loginData === null || loginData === void 0 ? void 0 : loginData.data;
+-        if (!loginData || !loginInfo || !serverInfo)
+-            throw new ZaloApiError.ZaloApiError("Đăng nhập thất bại");
++        const loginInfo = loginData === null || loginData === void 0 ? void 0 : loginData.data || (loginData.zpw_enk && loginData.uid ? loginData : void 0);
++        if (!loginData)
++            throw new ZaloApiError.ZaloApiError("Đăng nhập thất bại: Zalo did not return login data for the QR session");
++        if (!loginInfo)
++            throw new ZaloApiError.ZaloApiError(`Đăng nhập thất bại: login response has no account credentials (fields: ${Object.keys(loginData).join(",")}; data fields: ${Object.keys(loginData.data || {}).join(",")})`);
++        if (!serverInfo)
++            throw new ZaloApiError.ZaloApiError("Đăng nhập thất bại: Zalo did not return server information for the QR session");
+         ctx.secretKey = loginInfo.zpw_enk;
+         ctx.uid = loginInfo.uid;
+         // Zalo currently responds with setttings instead of settings

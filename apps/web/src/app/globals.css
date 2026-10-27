@@ -1,0 +1,73 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@keyframes loading-bar {
+  0% { transform: translateX(-110%); }
+  50% { transform: translateX(100%); }
+  100% { transform: translateX(220%); }
+}
+
+:root {
+  --background: 210 20% 97%;
+  --foreground: 215 28% 14%;
+  --card: 0 0% 100%;
+  --card-foreground: 222 20% 14%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222 20% 14%;
+  --primary: 166 58% 41%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 220 20% 96%;
+  --secondary-foreground: 222 20% 14%;
+  --muted: 220 20% 96%;
+  --muted-foreground: 220 10% 45%;
+  --accent: 165 44% 94%;
+  --accent-foreground: 168 66% 26%;
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 0 0% 100%;
+  --success: 142 71% 35%;
+  --success-foreground: 0 0% 100%;
+  --warning: 38 92% 50%;
+  --warning-foreground: 0 0% 100%;
+  --border: 214 18% 90%;
+  --input: 214 18% 87%;
+  --ring: 166 58% 41%;
+  --radius: 0.9rem;
+}
+
+@font-face {
+  font-family: Roboto;
+  src: url('/build/assets/roboto-400-normal-D2PTxGxD.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+* {
+  border-color: hsl(var(--border));
+}
+
+body {
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-family: Roboto, Arial, sans-serif;
+  font-size: 14px;
+  background-image: radial-gradient(hsl(215 18% 80% / 0.24) 0.65px, transparent 0.65px);
+  background-size: 18px 18px;
+}
+
+button, a, input, textarea, select { transition-duration: 160ms; }
+:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+
+button, input, textarea, select { font: inherit; }
+
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background-color: hsl(var(--border));
+  border-radius: 999px;
+}
+.hide-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+.hide-scrollbar::-webkit-scrollbar { display: none; width: 0; height: 0; }

@@ -1,0 +1,13 @@
+packages:
+  - "apps/*"
+
+onlyBuiltDependencies:
+  - "@nestjs/core"
+  - "@prisma/client"
+  - "@prisma/engines"
+  - "bcrypt"
+  - "msgpackr-extract"
+  - "prisma"
+
+patchedDependencies:
+  "zca-js@2.2.0": "patches/zca-js@2.2.0.patch"
