@@ -10,7 +10,7 @@ import { UpdateConversationDto } from './dto/update-conversation.dto';
 
 const conversationInclude = {
   customer: {
-    select: { id: true, name: true, phone: true, avatar: true, status: true, zaloUserId: true },
+    select: { id: true, name: true, phone: true, avatar: true, status: true, zaloUserId: true, tags: { include: { tag: true } } },
   },
   zaloOA: { select: { id: true, name: true, avatar: true } },
   assignedTo: { select: { id: true, name: true, avatar: true } },
@@ -34,6 +34,7 @@ export class ConversationsService {
         ...(channelFilter ? [{ zaloOA: channelFilter }] : []),
         ...(query.conversationType === 'group' ? [{ customer: { zaloUserId: { startsWith: 'group:' } } } as Prisma.ConversationWhereInput] : []),
         ...(query.conversationType === 'personal' ? [{ OR: [{ customer: { zaloUserId: null } }, { customer: { zaloUserId: { not: { startsWith: 'group:' } } } }] } as Prisma.ConversationWhereInput] : []),
+        ...(query.tagId ? [{ customer: { tags: { some: { tagId: query.tagId } } } } as Prisma.ConversationWhereInput] : []),
       ],
       ...(query.status ? { status: query.status as any } : {}),
       ...(query.assignedToId

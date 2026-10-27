@@ -24,6 +24,7 @@ import { cn, formatRelativeTime, initials } from '@/lib/utils';
 import { Conversation } from '@/lib/types';
 import { useZaloOAs } from '@/hooks/use-zalo-oa';
 import { useCurrentUser } from '@/hooks/use-current-user';
+import { useTags } from '@/hooks/use-tags';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
@@ -46,6 +47,7 @@ export function ConversationList({
   const [channel, setChannel] = React.useState<string>('all');
   const [period, setPeriod] = React.useState<string>('all');
   const [conversationType, setConversationType] = React.useState<string>('all');
+  const [tagId, setTagId] = React.useState<string>('all');
   const { data: currentUser } = useCurrentUser();
   const { data: zaloChannels } = useZaloOAs();
   const { data: personalChannels } = useQuery<{ id: string; name: string; channelId: string }[]>({
@@ -55,7 +57,8 @@ export function ConversationList({
   });
   const { data: socialChannels } = useQuery<{ id: string; name: string; provider: string }[]>({ queryKey: ['social-channel-options'], queryFn: () => api.get('/social-channels/options') });
   const { data: users } = useUsers();
-  const activeFilters = [status !== 'all', assignedToId !== 'all', channel !== 'all', period !== 'all', conversationType !== 'all'].filter(Boolean).length;
+  const { data: tags } = useTags();
+  const activeFilters = [status !== 'all', assignedToId !== 'all', channel !== 'all', period !== 'all', conversationType !== 'all', tagId !== 'all'].filter(Boolean).length;
   const selectedChannelName = zaloChannels?.find((item) => item.id === channel)?.name
     ?? personalChannels?.find((item) => item.channelId === channel)?.name
     ?? socialChannels?.find((item) => item.id === channel)?.name
@@ -70,6 +73,7 @@ export function ConversationList({
     assignedToId: assignedToId === 'me' ? currentUser?.id : assignedToId === 'all' ? undefined : assignedToId,
     dateFrom: periodStart,
     conversationType: conversationType === 'all' ? undefined : conversationType,
+    tagId: tagId === 'all' ? undefined : tagId,
   });
 
   return (
@@ -141,7 +145,11 @@ export function ConversationList({
             <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Loại hội thoại" /></SelectTrigger>
             <SelectContent><SelectItem value="all">Cá nhân và nhóm</SelectItem><SelectItem value="personal">Cá nhân</SelectItem><SelectItem value="group">Nhóm</SelectItem></SelectContent>
           </Select>
-              {activeFilters > 0 && <Button variant="ghost" size="sm" className="h-8 w-full text-xs" onClick={() => { setStatus('all'); setAssignedToId('all'); setChannel('all'); setPeriod('all'); setConversationType('all'); }}>Xóa bộ lọc</Button>}
+          <Select value={tagId} onValueChange={setTagId}>
+            <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Nhãn khách hàng" /></SelectTrigger>
+            <SelectContent><SelectItem value="all">Tất cả nhãn</SelectItem>{tags?.map((tag) => <SelectItem key={tag.id} value={tag.id}>{tag.name}</SelectItem>)}</SelectContent>
+          </Select>
+              {activeFilters > 0 && <Button variant="ghost" size="sm" className="h-8 w-full text-xs" onClick={() => { setStatus('all'); setAssignedToId('all'); setChannel('all'); setPeriod('all'); setConversationType('all'); setTagId('all'); }}>Xóa bộ lọc</Button>}
             </PopoverContent>
           </Popover>
           {activeFilters > 0 && <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto scrollbar-thin">
@@ -150,6 +158,7 @@ export function ConversationList({
             {channel !== 'all' && <FilterChip label={selectedChannelName} onRemove={() => setChannel('all')} />}
             {period !== 'all' && <FilterChip label={period === '24h' ? '24 giờ' : '7 ngày'} onRemove={() => setPeriod('all')} />}
             {conversationType !== 'all' && <FilterChip label={conversationType === 'group' ? 'Nhóm' : 'Cá nhân'} onRemove={() => setConversationType('all')} />}
+            {tagId !== 'all' && <FilterChip label={tags?.find((tag) => tag.id === tagId)?.name ?? 'Nhãn'} onRemove={() => setTagId('all')} />}
           </div>}
         </div>
       </div>
@@ -225,6 +234,7 @@ function ConversationRow({
               ? `${conversation.lastMessage.direction === 'OUT' ? 'Bạn: ' : ''}${conversation.lastMessage.content}`
               : 'Chưa có tin nhắn'}
           </p>
+          {!!conversation.customer.tags?.length && <div className="mt-1 flex min-w-0 gap-1 overflow-hidden">{conversation.customer.tags.slice(0, 3).map(({ tag }) => <span key={tag.id} className="max-w-24 truncate rounded-full border px-1.5 py-0.5 text-[9px] font-medium leading-none" style={{ borderColor: tag.color, color: tag.color }}>{tag.name}</span>)}</div>}
           <div className="mt-2 flex min-w-0 items-center gap-1.5">
             <Badge variant={statusMeta.variant} className="h-5 shrink-0 whitespace-nowrap px-1.5 py-0 text-[10px] leading-4">
               {statusMeta.label}

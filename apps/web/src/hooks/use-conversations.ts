@@ -11,6 +11,7 @@ export interface ConversationFilters {
   zaloOAId?: string;
   dateFrom?: string;
   dateTo?: string;
+  tagId?: string;
   [key: string]: unknown;
 }
 

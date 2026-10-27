@@ -88,6 +88,7 @@ export function useAddCustomerTag(customerId: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['customer', customerId] });
       queryClient.invalidateQueries({ queryKey: ['customers'] });
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
     },
   });
 }
@@ -99,6 +100,7 @@ export function useRemoveCustomerTag(customerId: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['customer', customerId] });
       queryClient.invalidateQueries({ queryKey: ['customers'] });
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
     },
   });
 }

@@ -28,4 +28,8 @@ export class QueryConversationDto {
   @IsOptional()
   @IsString()
   conversationType?: 'group' | 'personal';
+
+  @IsOptional()
+  @IsString()
+  tagId?: string;
 }
