@@ -22,6 +22,28 @@ export function useReconnectOA() {
   });
 }
 
+export function useDeleteOA() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.delete<{ success: boolean }>(`/zalo-oa/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['zalo-oa'] });
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    },
+  });
+}
+
+export function useUpdateOA() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...payload }: { id: string; name?: string; dailyMessageLimit?: number }) =>
+      api.patch<ZaloOA>(`/zalo-oa/${id}`, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['zalo-oa'] });
+    },
+  });
+}
+
 export function useUpdateStaffAccess(oaId: string) {
   const queryClient = useQueryClient();
   return useMutation({

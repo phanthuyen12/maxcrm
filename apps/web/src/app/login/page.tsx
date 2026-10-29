@@ -3,10 +3,11 @@
 import * as React from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
+import { useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { ChevronDown, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { Eye, EyeOff, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,7 +15,7 @@ import { Label } from '@/components/ui/label';
 import { api, ApiError } from '@/lib/api';
 
 const loginSchema = z.object({
-  email: z.string().email('Email không hợp lệ'),
+  email: z.string().trim().email('Email không hợp lệ'),
   password: z.string().min(4, 'Mật khẩu tối thiểu 4 ký tự'),
 });
 
@@ -30,6 +31,7 @@ function BrandLogo({ mobile = false }: { mobile?: boolean }) {
 
 export default function LoginPage() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [showPassword, setShowPassword] = React.useState(false);
   const [authError, setAuthError] = React.useState('');
   const {
@@ -38,15 +40,19 @@ export default function LoginPage() {
     formState: { errors, isSubmitting },
   } = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
-    defaultValues: { email: 'nhanvien1@zalocrm.vn', password: '123456' },
+    defaultValues: { email: '', password: '' },
   });
 
   const onSubmit = async (data: LoginForm) => {
     setAuthError('');
     try {
-      await api.post('/auth/login', data);
+      const result = await api.post<{ user?: { role?: string } }>('/auth/login', {
+        email: data.email.trim().toLowerCase(),
+        password: data.password,
+      });
+      queryClient.clear();
       toast.success('Đăng nhập thành công');
-      router.push('/overview');
+      router.push(result?.user?.role === 'CHAT' ? '/inbox' : '/overview');
       router.refresh();
     } catch (e) {
       const message = e instanceof ApiError ? e.message : 'Đăng nhập thất bại';
@@ -137,16 +143,6 @@ export default function LoginPage() {
               {isSubmitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Đang đăng nhập…</> : 'Đăng nhập'}
             </Button>
           </form>
-
-          {process.env.NODE_ENV === 'development' && (
-            <details className="group mt-6 border-t border-[#E7ECE9] pt-5 text-sm text-[#526C62]">
-              <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between gap-3 rounded-sm font-medium text-[#315D50] marker:hidden focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#19836B] [&::-webkit-details-marker]:hidden">Trải nghiệm với tài khoản dùng thử<ChevronDown className="h-4 w-4 shrink-0 text-[#668077] transition-transform duration-150 group-open:rotate-180" /></summary>
-              <div className="mt-3 rounded-lg bg-[#F2F7F4] px-4 py-3 leading-6">
-                <p>Email: <span className="font-medium text-[#29483D]">nhanvien1@zalocrm.vn</span></p>
-                <p>Mật khẩu: <span className="font-medium text-[#29483D]">123456</span></p>
-              </div>
-            </details>
-          )}
         </div>
       </section>
     </main>

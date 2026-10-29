@@ -1,4 +1,4 @@
-import { Body, Controller, ForbiddenException, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, ForbiddenException, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { UpdateAvailabilityDto } from './dto/update-availability.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -36,14 +36,35 @@ export class UsersController {
     return this.usersService.setMemberActive(id, isActive, actor.userId, actor.role as Role);
   }
 
+  @Patch(':id/availability')
+  updateAvailability(@Param('id') id: string, @Body() dto: UpdateAvailabilityDto, @CurrentUser() actor: CurrentUserPayload) {
+    if (id !== actor.userId && actor.role !== Role.ADMIN && actor.role !== Role.MANAGER) {
+      throw new ForbiddenException('Chỉ được cập nhật trạng thái của chính mình');
+    }
+    return this.usersService.updateAvailability(id, dto);
+  }
+
+  @Patch(':id')
+  updateMember(
+    @Param('id') id: string,
+    @Body() body: { name?: string; email?: string; password?: string; role?: Role },
+    @CurrentUser() actor: CurrentUserPayload,
+  ) {
+    if (id !== actor.userId && actor.role !== Role.ADMIN && actor.role !== Role.MANAGER) {
+      throw new ForbiddenException('Không có quyền cập nhật thông tin thành viên này');
+    }
+    return this.usersService.updateMember(id, body, actor.userId, actor.role as Role);
+  }
+
+  @Delete(':id')
+  @UseGuards(RolesGuard)
+  @Roles(Role.ADMIN, Role.MANAGER)
+  deleteMember(@Param('id') id: string, @CurrentUser() actor: CurrentUserPayload) {
+    return this.usersService.deleteMember(id, actor.userId, actor.role as Role);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.usersService.findOne(id);
-  }
-
-  @Patch(':id/availability')
-  updateAvailability(@Param('id') id: string, @Body() dto: UpdateAvailabilityDto, @CurrentUser() actor: CurrentUserPayload) {
-    if (id !== actor.userId) throw new ForbiddenException('Chỉ được cập nhật trạng thái của chính mình');
-    return this.usersService.updateAvailability(actor.userId, dto);
   }
 }

@@ -1,17 +1,19 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { Topbar } from '@/components/layout/topbar';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { CatalogList } from '@/components/settings/catalog-list';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { NOTIFICATION_SOUND_KEY, playNotificationSound, unlockNotificationSound } from '@/lib/notification-sound';
+import { api, ApiError } from '@/lib/api';
 import { useCurrentUser } from '@/hooks/use-current-user';
 import { useCreateTag, useDeleteTag, useTags, useUpdateTag } from '@/hooks/use-tags';
 import {
@@ -31,10 +33,48 @@ const ROLE_LABEL: Record<string, string> = {
   ADMIN: 'Quản trị viên',
   MANAGER: 'Quản lý',
   AGENT: 'Nhân viên',
+  CHAT: 'Chat',
 };
 
 function AccountTab() {
+  const queryClient = useQueryClient();
   const { data: user, isLoading } = useCurrentUser();
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (user) {
+      setName(user.name ?? '');
+      setEmail(user.email ?? '');
+    }
+  }, [user]);
+
+  const handleUpdateProfile = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!user) return;
+    setSaving(true);
+    try {
+      await api.patch(`/users/${user.id}`, {
+        name,
+        email,
+        ...(password.trim() ? { password } : {}),
+      });
+      setPassword('');
+      toast.success('Đã cập nhật thông tin tài khoản');
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['auth', 'me'] }),
+        queryClient.invalidateQueries({ queryKey: ['users'] }),
+        queryClient.invalidateQueries({ queryKey: ['team-members'] }),
+      ]);
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Không thể cập nhật thông tin tài khoản');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="grid items-start gap-5 xl:grid-cols-[280px_minmax(0,1fr)]">
       <Card className="overflow-hidden">
@@ -59,14 +99,53 @@ function AccountTab() {
           <div className="grid grid-cols-2 border-t sm:grid-cols-4"><div className="border-b p-4 sm:border-b-0 sm:border-r"><p className="text-xs text-muted-foreground">Vai trò</p><p className="mt-1 font-semibold">{user ? ROLE_LABEL[user.role] : '—'}</p></div><div className="border-b p-4 sm:border-b-0 sm:border-r"><p className="text-xs text-muted-foreground">Trạng thái</p><p className="mt-1 font-semibold text-emerald-700">Đang hoạt động</p></div><div className="border-r p-4"><p className="text-xs text-muted-foreground">Tài khoản</p><p className="mt-1 font-semibold">Zalo CRM</p></div><div className="p-4"><p className="text-xs text-muted-foreground">Phiên bản</p><p className="mt-1 font-semibold">0.1.0</p></div></div>
         </Card>
         <Card className="overflow-hidden">
-          <CardHeader className="flex flex-row items-center gap-3 space-y-0 border-b px-5 py-4"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent text-accent-foreground"><CircleUserRound className="h-5 w-5"/></span><div><CardTitle className="text-base">Thông tin cá nhân</CardTitle><p className="mt-1 text-sm text-muted-foreground">Thông tin tài khoản đang đăng nhập</p></div></CardHeader>
-          <CardContent className="grid gap-5 p-5 sm:grid-cols-2">
-            <div className="space-y-2"><label className="text-sm font-medium">Họ và tên</label><div className="flex h-11 items-center rounded-xl border bg-background px-3 text-sm font-medium shadow-sm">{user?.name ?? 'Đang tải...'}</div></div>
-            <div className="space-y-2"><label className="text-sm font-medium">Địa chỉ email</label><div className="flex h-11 items-center rounded-xl border bg-muted/40 px-3 text-sm text-muted-foreground">{user?.email ?? 'Đang tải...'}</div></div>
-            <div className="space-y-2"><label className="text-sm font-medium">Ngôn ngữ</label><div className="flex h-11 items-center justify-between rounded-xl border bg-background px-3 text-sm shadow-sm"><span className="flex items-center gap-2"><Languages className="h-4 w-4 text-muted-foreground"/>Tiếng Việt</span><span className="text-muted-foreground">⌄</span></div></div>
-            <div className="space-y-2"><label className="text-sm font-medium">Múi giờ</label><div className="flex h-11 items-center justify-between rounded-xl border bg-background px-3 text-sm shadow-sm"><span>Asia/Ho_Chi_Minh (UTC+7)</span><span className="text-muted-foreground">⌄</span></div></div>
-          </CardContent>
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t bg-muted/20 px-5 py-4"><p className="text-xs text-muted-foreground">Để thay đổi email hoặc thông tin đăng nhập, vui lòng liên hệ quản trị viên.</p><div className="flex items-center gap-2 text-xs text-muted-foreground"><SlidersHorizontal className="h-3.5 w-3.5"/>Cài đặt tài khoản</div></div>
+          <CardHeader className="flex flex-row items-center gap-3 space-y-0 border-b px-5 py-4"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent text-accent-foreground"><CircleUserRound className="h-5 w-5"/></span><div><CardTitle className="text-base">Thông tin cá nhân</CardTitle><p className="mt-1 text-sm text-muted-foreground">Cập nhật thông tin tài khoản đang đăng nhập</p></div></CardHeader>
+          <form onSubmit={(event) => void handleUpdateProfile(event)}>
+            <CardContent className="grid gap-5 p-5 sm:grid-cols-2">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Họ và tên</label>
+                <input
+                  className="flex h-11 w-full rounded-xl border bg-background px-3 text-sm font-medium shadow-sm outline-none focus:border-primary"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Địa chỉ email</label>
+                <input
+                  type="email"
+                  className="flex h-11 w-full rounded-xl border bg-background px-3 text-sm shadow-sm outline-none focus:border-primary"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Mật khẩu mới (tùy chọn)</label>
+                <input
+                  type="password"
+                  minLength={6}
+                  placeholder="Để trống nếu không thay đổi"
+                  className="flex h-11 w-full rounded-xl border bg-background px-3 text-sm shadow-sm outline-none focus:border-primary"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Ngôn ngữ & Múi giờ</label>
+                <div className="flex h-11 items-center justify-between rounded-xl border bg-muted/40 px-3 text-sm text-muted-foreground">
+                  <span className="flex items-center gap-2"><Languages className="h-4 w-4 text-muted-foreground"/>Tiếng Việt · UTC+7</span>
+                </div>
+              </div>
+            </CardContent>
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t bg-muted/20 px-5 py-4">
+              <p className="text-xs text-muted-foreground">Cập nhật họ tên, email đăng nhập hoặc mật khẩu của bạn.</p>
+              <Button type="submit" size="sm" disabled={saving || !user}>
+                {saving ? 'Đang lưu…' : 'Lưu thay đổi'}
+              </Button>
+            </div>
+          </form>
         </Card>
         <NotificationSoundSetting />
         {user?.role === 'ADMIN' && <DataBackupSetting />}

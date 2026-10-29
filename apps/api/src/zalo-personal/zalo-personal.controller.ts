@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PersonalZaloService } from './zalo-personal.service';
 import { PersonalZaloAccountsService } from './personal-zalo-accounts.service';
@@ -45,6 +45,39 @@ export class PersonalZaloController {
 
   @Get('accounts/:id/groups')
   accountGroups(@Param('id') id: string, @CurrentUser() user: CurrentUserPayload) { return this.accounts.groups(id, user.userId, user.role); }
+
+  @Put('accounts/:id/groups/:groupId/access/:userId')
+  @UseGuards(RolesGuard)
+  @Roles(Role.ADMIN)
+  assignGroupAccess(
+    @Param('id') id: string,
+    @Param('groupId') groupId: string,
+    @Param('userId') userId: string,
+    @Body() body: { groupName?: string },
+  ) {
+    return this.accounts.assignGroupAccess(id, groupId, userId, body?.groupName);
+  }
+
+  @Delete('accounts/:id/groups/:groupId/access/:userId')
+  @UseGuards(RolesGuard)
+  @Roles(Role.ADMIN)
+  removeGroupAccess(
+    @Param('id') id: string,
+    @Param('groupId') groupId: string,
+    @Param('userId') userId: string,
+  ) {
+    return this.accounts.removeGroupAccess(id, groupId, userId);
+  }
+
+  @Delete('accounts/:id/groups/:groupId/access')
+  @UseGuards(RolesGuard)
+  @Roles(Role.ADMIN)
+  clearGroupAccess(
+    @Param('id') id: string,
+    @Param('groupId') groupId: string,
+  ) {
+    return this.accounts.clearGroupAccess(id, groupId);
+  }
 
   @Post('accounts/:id/scan-group-link')
   scanGroupLink(@Param('id') id: string, @Body() body: { link: string }, @CurrentUser() user: CurrentUserPayload) {

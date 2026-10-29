@@ -51,6 +51,33 @@ export class ZaloOaService {
     return this.withWebhookInfo(oa);
   }
 
+  async update(id: string, input: { name?: string; dailyMessageLimit?: number }) {
+    await this.findOne(id);
+    const data: { name?: string; dailyMessageLimit?: number } = {};
+    if (input.name !== undefined) {
+      const trimmed = input.name.trim();
+      if (!trimmed) throw new BadRequestException('Tên Zalo OA không được để trống');
+      data.name = trimmed;
+    }
+    if (input.dailyMessageLimit !== undefined) {
+      const limit = Number(input.dailyMessageLimit);
+      if (!Number.isFinite(limit) || limit < 1) throw new BadRequestException('Giới hạn gửi tin không hợp lệ');
+      data.dailyMessageLimit = Math.floor(limit);
+    }
+    await this.prisma.zaloOA.update({ where: { id }, data });
+    return this.findOne(id);
+  }
+
+  async remove(id: string) {
+    await this.findOne(id);
+    await this.prisma.$transaction([
+      this.prisma.conversation.deleteMany({ where: { zaloOAId: id } }),
+      this.prisma.oAStaffAccess.deleteMany({ where: { zaloOAId: id } }),
+      this.prisma.zaloOA.delete({ where: { id } }),
+    ]);
+    return { success: true };
+  }
+
   // Giả lập quy trình kết nối lại OAuth với Zalo OA — KHÔNG gọi API Zalo thật.
   async reconnect(id: string) {
     await this.findOne(id);
@@ -92,7 +119,7 @@ export class ZaloOaService {
       this.prisma.user.findUnique({ where: { id: userId }, select: { id: true, isActive: true, role: true } }),
     ]);
     if (!channel) throw new NotFoundException('Không tìm thấy kênh');
-    if (!user?.isActive || user.role === 'ADMIN') throw new NotFoundException('Không tìm thấy nhân viên đang hoạt động');
+    if (!user?.isActive) throw new NotFoundException('Không tìm thấy nhân viên đang hoạt động');
     return this.prisma.oAStaffAccess.upsert({
       where: { userId_zaloOAId: { userId, zaloOAId } },
       update: { canSend },

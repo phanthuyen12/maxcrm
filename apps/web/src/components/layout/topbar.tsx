@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { usePathname } from 'next/navigation';
+import { useQueryClient } from '@tanstack/react-query';
 import { Bell, LogOut, PanelLeftClose, PanelLeftOpen, User as UserIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
@@ -31,6 +32,7 @@ const ROLE_LABEL: Record<string, string> = {
 export function Topbar({ title }: { title: string }) {
   const router = useRouter();
   const pathname = usePathname();
+  const queryClient = useQueryClient();
   const { data: user } = useCurrentUser();
   const { data: notifications = [] } = useNotifications();
   const markRead = useMarkNotificationRead();
@@ -51,6 +53,7 @@ export function Topbar({ title }: { title: string }) {
 
   const handleLogout = async () => {
     await api.post('/auth/logout');
+    queryClient.clear();
     toast.success('Đã đăng xuất');
     router.push('/login');
     router.refresh();

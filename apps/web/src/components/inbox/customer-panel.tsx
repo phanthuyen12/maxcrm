@@ -2,7 +2,9 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { Phone } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
+import { Phone, X } from 'lucide-react';
+import { toast } from 'sonner';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -17,6 +19,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useConversation, useUpdateConversation } from '@/hooks/use-conversations';
 import { useCustomer } from '@/hooks/use-customers';
 import { useUsers } from '@/hooks/use-users';
+import { useCurrentUser } from '@/hooks/use-current-user';
+import { api } from '@/lib/api';
 import { initials } from '@/lib/utils';
 import { CustomerTagsPanel } from '@/components/customers/customer-tags-panel';
 import { CustomerNotesPanel } from '@/components/customers/customer-notes-panel';
@@ -24,11 +28,51 @@ import { CustomerAppointmentsPanel } from '@/components/customers/customer-appoi
 import { CustomerHistoryPanel } from '@/components/customers/customer-history-panel';
 
 export function CustomerPanel({ conversationId }: { conversationId: string | null }) {
+  const queryClient = useQueryClient();
+  const { data: currentUser } = useCurrentUser();
   const { data: conversation } = useConversation(conversationId);
   const customerId = conversation?.customer.id ?? null;
   const { data: customer, isLoading } = useCustomer(customerId);
   const { data: users } = useUsers();
   const updateConversation = useUpdateConversation(conversationId ?? '');
+  const isAdmin = currentUser?.role === 'ADMIN';
+  const groupAssignedUsers = conversation?.groupAssignedUsers ?? [];
+  const availableGroupSales = (users ?? []).filter(
+    (u) => u.role !== 'ADMIN' && !groupAssignedUsers.some((a) => a.id === u.id),
+  );
+
+  const handleAssignGroupSale = async (userId: string) => {
+    if (!conversation?.personalAccountId || !conversation?.personalGroupId) return;
+    try {
+      await api.put(
+        `/zalo-personal/accounts/${conversation.personalAccountId}/groups/${encodeURIComponent(conversation.personalGroupId)}/access/${encodeURIComponent(userId)}`,
+        { groupName: customer?.name },
+      );
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] }),
+        queryClient.invalidateQueries({ queryKey: ['conversations'] }),
+      ]);
+      toast.success('Đã phân quyền xem nhóm cho sale');
+    } catch {
+      toast.error('Không thể phân quyền nhóm');
+    }
+  };
+
+  const handleRemoveGroupSale = async (userId: string) => {
+    if (!conversation?.personalAccountId || !conversation?.personalGroupId) return;
+    try {
+      await api.delete(
+        `/zalo-personal/accounts/${conversation.personalAccountId}/groups/${encodeURIComponent(conversation.personalGroupId)}/access/${encodeURIComponent(userId)}`,
+      );
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] }),
+        queryClient.invalidateQueries({ queryKey: ['conversations'] }),
+      ]);
+      toast.success('Đã gỡ quyền xem nhóm của sale');
+    } catch {
+      toast.error('Không thể gỡ quyền nhóm');
+    }
+  };
 
   if (!conversationId) {
     return <div className="min-h-0 w-full border-l bg-card" />;
@@ -76,6 +120,53 @@ export function CustomerPanel({ conversationId }: { conversationId: string | nul
                 </SelectContent>
               </Select>
             </Field>
+
+            {isAdmin && conversation?.isGroup && conversation?.personalAccountId && conversation?.personalGroupId && (
+              <Field label="Sale được thấy nhóm này">
+                <div className="space-y-2 rounded-lg border bg-muted/20 p-2.5 text-xs">
+                  {groupAssignedUsers.length === 0 ? (
+                    <p className="text-[11px] text-muted-foreground">
+                      Chưa phân riêng — tất cả sale trong tài khoản Zalo này đều thấy.
+                    </p>
+                  ) : (
+                    <div className="flex flex-wrap gap-1.5">
+                      {groupAssignedUsers.map((u) => (
+                        <span
+                          key={u.id}
+                          className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary"
+                        >
+                          {u.name}
+                          <button
+                            type="button"
+                            className="hover:text-destructive"
+                            title={`Gỡ ${u.name}`}
+                            onClick={() => void handleRemoveGroupSale(u.id)}
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {availableGroupSales.length > 0 && (
+                    <select
+                      className="h-8 w-full rounded-md border bg-background px-2 text-xs"
+                      value=""
+                      onChange={(e) => {
+                        if (e.target.value) void handleAssignGroupSale(e.target.value);
+                      }}
+                    >
+                      <option value="">+ Chỉ định sale được xem nhóm</option>
+                      {availableGroupSales.map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {u.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              </Field>
+            )}
 
             <Field label="Nhãn">
               <CustomerTagsPanel customerId={customer.id} tags={customer.tags} />

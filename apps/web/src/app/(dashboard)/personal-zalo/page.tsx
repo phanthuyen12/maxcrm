@@ -10,11 +10,24 @@ import { getSocket } from '@/lib/socket';
 import { useUsers } from '@/hooks/use-users';
 import { useCurrentUser } from '@/hooks/use-current-user';
 
-type Account = { id: string; name: string; status: string; qrImage: string | null; hasProxy: boolean; proxyType: string | null; createdAt: string; channelId: string; staffAccess: Array<{ user: { id: string; name: string; role: string }; canSend: boolean }> };
+type AssignedGroupUser = { id: string; name: string; role: string };
+type ManagedGroup = { id: string; name: string; memberCount?: number; assignedUsers: AssignedGroupUser[] };
+type Account = {
+  id: string;
+  name: string;
+  status: string;
+  qrImage: string | null;
+  hasProxy: boolean;
+  proxyType: string | null;
+  createdAt: string;
+  channelId: string;
+  staffAccess: Array<{ user: { id: string; name: string; role: string }; canSend: boolean }>;
+  managedGroups?: ManagedGroup[];
+};
 type ZaloStatusEvent = { accountId: string; status: string; qrImage: string | null };
 type Friend = { userId: string; displayName: string; zaloName: string; avatar: string; phoneNumber: string };
 type FriendRequest = { userId: string; displayName: string; zaloName: string; avatar: string; phoneNumber: string };
-type Group = { id: string; name: string; memberCount: number };
+type Group = { id: string; name: string; memberCount: number; assignedUsers?: AssignedGroupUser[] };
 type AccountDirectory = { friends: Friend[]; requests: FriendRequest[]; groups: Group[]; loading: boolean };
 const statusNames: Record<string, string> = { disconnected: 'Chưa kết nối', waiting_qr: 'Chờ quét mã', scanned: 'Đã quét, đang xác nhận', connected: 'Đã kết nối', reconnecting: 'Đang kết nối lại', error: 'Có lỗi' };
 
@@ -98,6 +111,88 @@ export default function PersonalZaloPage() {
   const removeChannelMember = async (account: Account, userId: string) => {
     try { await api.delete(`/zalo-oa/${account.channelId}/staff-access/${userId}`); await refresh(); }
     catch (e) { setError(e instanceof Error ? e.message : 'Không thể gỡ thành viên khỏi kênh'); }
+  };
+
+  const assignGroupSale = async (account: Account, group: { id: string; name: string }, userId: string) => {
+    try {
+      const updated = await api.put<{ groupId: string; assignedUsers: AssignedGroupUser[] }>(
+        `/zalo-personal/accounts/${account.id}/groups/${encodeURIComponent(group.id)}/access/${encodeURIComponent(userId)}`,
+        { groupName: group.name },
+      );
+      setDirectories((current) => {
+        const dir = current[account.id];
+        if (!dir) return current;
+        return {
+          ...current,
+          [account.id]: {
+            ...dir,
+            groups: dir.groups.map((g) => (g.id === group.id ? { ...g, assignedUsers: updated.assignedUsers } : g)),
+          },
+        };
+      });
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Không thể phân công sale cho nhóm');
+    }
+  };
+
+  const removeGroupSale = async (account: Account, groupId: string, userId: string) => {
+    try {
+      const updated = await api.delete<{ groupId: string; assignedUsers: AssignedGroupUser[] }>(
+        `/zalo-personal/accounts/${account.id}/groups/${encodeURIComponent(groupId)}/access/${encodeURIComponent(userId)}`,
+      );
+      setDirectories((current) => {
+        const dir = current[account.id];
+        if (!dir) return current;
+        return {
+          ...current,
+          [account.id]: {
+            ...dir,
+            groups: dir.groups.map((g) => (g.id === groupId ? { ...g, assignedUsers: updated.assignedUsers } : g)),
+          },
+        };
+      });
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Không thể gỡ sale khỏi nhóm');
+    }
+  };
+
+  const clearGroupSales = async (account: Account, groupId: string) => {
+    try {
+      await api.delete(`/zalo-personal/accounts/${account.id}/groups/${encodeURIComponent(groupId)}/access`);
+      setDirectories((current) => {
+        const dir = current[account.id];
+        if (!dir) return current;
+        return {
+          ...current,
+          [account.id]: {
+            ...dir,
+            groups: dir.groups.map((g) => (g.id === groupId ? { ...g, assignedUsers: [] } : g)),
+          },
+        };
+      });
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Không thể đặt lại quyền nhóm');
+    }
+  };
+
+  const getCombinedGroups = (account: Account): ManagedGroup[] => {
+    const map = new Map<string, ManagedGroup>();
+    for (const g of account.managedGroups ?? []) {
+      map.set(g.id, { id: g.id, name: g.name, memberCount: g.memberCount, assignedUsers: g.assignedUsers ?? [] });
+    }
+    for (const g of directories[account.id]?.groups ?? []) {
+      const existing = map.get(g.id);
+      map.set(g.id, {
+        id: g.id,
+        name: g.name || existing?.name || `Nhóm ${g.id}`,
+        memberCount: g.memberCount ?? existing?.memberCount,
+        assignedUsers: g.assignedUsers ?? existing?.assignedUsers ?? [],
+      });
+    }
+    return [...map.values()];
   };
 
   const loadDirectory = async (account: Account) => {
@@ -200,22 +295,148 @@ export default function PersonalZaloPage() {
             </div>
             <div className="border-t px-5 py-4 md:px-6">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <div><h4 className="text-sm font-medium">Bạn bè, lời mời và nhóm</h4><p className="text-xs text-muted-foreground">Dữ liệu trực tiếp từ tài khoản Zalo đã kết nối.</p></div>
+                <div>
+                  <h4 className="text-sm font-medium">Bạn bè, lời mời & Phân chia nhóm cho Sale</h4>
+                  <p className="text-xs text-muted-foreground">
+                    Nhóm được gán riêng thì chỉ những Sale được gán mới nhìn thấy; nhóm không gán riêng thì tất cả Sale trong kênh đều thấy.
+                  </p>
+                </div>
                 <Button variant="outline" size="sm" disabled={account.status !== 'connected' || directories[account.id]?.loading} onClick={() => void loadDirectory(account)}>
-                  {directories[account.id]?.loading ? 'Đang tải…' : 'Tải danh bạ Zalo'}
+                  {directories[account.id]?.loading ? 'Đang tải…' : 'Tải danh bạ & nhóm Zalo'}
                 </Button>
               </div>
-              {directories[account.id] && !directories[account.id].loading && <div className="mt-4 grid gap-4 md:grid-cols-3">
-                <div><h5 className="mb-2 text-xs font-semibold">Bạn bè ({directories[account.id].friends.length})</h5><ul className="max-h-56 space-y-2 overflow-y-auto">
-                  {directories[account.id].friends.slice(0, 100).map((friend) => <li key={friend.userId} className="flex items-center justify-between gap-2 text-xs"><span className="truncate">{friend.displayName || friend.zaloName || friend.userId}</span><Button size="sm" variant="outline" onClick={() => void openChat(account, friend.userId, friend.displayName || friend.zaloName, false)}>Chat</Button></li>)}
-                </ul></div>
-                <div><h5 className="mb-2 text-xs font-semibold">Lời mời kết bạn ({directories[account.id].requests.length})</h5><ul className="max-h-56 space-y-2 overflow-y-auto">
-                  {directories[account.id].requests.map((friend) => <li key={friend.userId} className="flex items-center justify-between gap-2 text-xs"><span className="truncate">{friend.displayName || friend.zaloName || friend.userId}</span><Button size="sm" onClick={() => void acceptRequest(account, friend)}>Chấp nhận</Button></li>)}
-                </ul></div>
-                <div><h5 className="mb-2 text-xs font-semibold">Nhóm ({directories[account.id].groups.length})</h5><ul className="max-h-56 space-y-2 overflow-y-auto">
-                  {directories[account.id].groups.map((group) => <li key={group.id} className="flex items-center justify-between gap-2 text-xs"><span className="truncate">{group.name} · {group.memberCount}</span><Button size="sm" variant="outline" onClick={() => void openChat(account, group.id, group.name, true)}>Chat</Button></li>)}
-                </ul></div>
-              </div>}
+              {(() => {
+                const combinedGroups = getCombinedGroups(account);
+                const dir = directories[account.id];
+                if (!dir && combinedGroups.length === 0) return null;
+                return (
+                  <div className="mt-4 space-y-4">
+                    <div>
+                      <h5 className="mb-2 text-xs font-semibold">
+                        Danh sách Nhóm Zalo ({combinedGroups.length})
+                      </h5>
+                      {combinedGroups.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">Chưa có nhóm nào. Hãy bấm &ldquo;Tải danh bạ &amp; nhóm Zalo&rdquo; khi tài khoản đã kết nối.</p>
+                      ) : (
+                        <ul className="max-h-80 space-y-2.5 overflow-y-auto pr-1">
+                          {combinedGroups.map((group) => {
+                            const assigned = group.assignedUsers ?? [];
+                            const availableSales = users.filter((u) => u.role !== 'ADMIN' && !assigned.some((a) => a.id === u.id));
+                            return (
+                              <li key={group.id} className="rounded-xl border bg-background/70 p-3 text-xs">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <div className="min-w-0">
+                                    <p className="truncate font-semibold text-foreground">
+                                      {group.name}
+                                      {typeof group.memberCount === 'number' && (
+                                        <span className="ml-1.5 font-normal text-muted-foreground">· {group.memberCount} thành viên</span>
+                                      )}
+                                    </p>
+                                    <p className="mt-0.5 text-[11px] text-muted-foreground">
+                                      {assigned.length === 0
+                                        ? 'Trạng thái: Tất cả sale đều thấy nhóm này'
+                                        : `Trạng thái: Chỉ ${assigned.length} sale được chỉ định mới thấy nhóm này`}
+                                    </p>
+                                  </div>
+                                  <div className="flex items-center gap-1.5">
+                                    {canManageAccess && availableSales.length > 0 && (
+                                      <select
+                                        className="h-8 max-w-44 rounded-md border bg-background px-2 text-xs"
+                                        value=""
+                                        onChange={(e) => {
+                                          if (e.target.value) void assignGroupSale(account, group, e.target.value);
+                                        }}
+                                      >
+                                        <option value="">+ Phân cho sale</option>
+                                        {availableSales.map((u) => (
+                                          <option key={u.id} value={u.id}>
+                                            {u.name}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    )}
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      disabled={account.status !== 'connected'}
+                                      onClick={() => void openChat(account, group.id, group.name, true)}
+                                    >
+                                      Chat
+                                    </Button>
+                                  </div>
+                                </div>
+                                {assigned.length > 0 && (
+                                  <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t pt-2">
+                                    <span className="text-[11px] text-muted-foreground">Sale được thấy:</span>
+                                    {assigned.map((u) => (
+                                      <span
+                                        key={u.id}
+                                        className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 text-[11px] font-medium text-primary"
+                                      >
+                                        {u.name}
+                                        {canManageAccess && (
+                                          <button
+                                            type="button"
+                                            className="ml-0.5 text-primary/70 hover:text-destructive"
+                                            title={`Bỏ quyền xem nhóm của ${u.name}`}
+                                            onClick={() => void removeGroupSale(account, group.id, u.id)}
+                                          >
+                                            ×
+                                          </button>
+                                        )}
+                                      </span>
+                                    ))}
+                                    {canManageAccess && (
+                                      <button
+                                        type="button"
+                                        className="ml-auto text-[11px] text-muted-foreground underline hover:text-foreground"
+                                        onClick={() => void clearGroupSales(account, group.id)}
+                                      >
+                                        Mở cho tất cả sale
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      )}
+                    </div>
+
+                    {dir && !dir.loading && (
+                      <div className="grid gap-4 border-t pt-3 md:grid-cols-2">
+                        <div>
+                          <h5 className="mb-2 text-xs font-semibold">Bạn bè ({dir.friends.length})</h5>
+                          <ul className="max-h-48 space-y-2 overflow-y-auto">
+                            {dir.friends.slice(0, 100).map((friend) => (
+                              <li key={friend.userId} className="flex items-center justify-between gap-2 text-xs">
+                                <span className="truncate">{friend.displayName || friend.zaloName || friend.userId}</span>
+                                <Button size="sm" variant="outline" onClick={() => void openChat(account, friend.userId, friend.displayName || friend.zaloName, false)}>
+                                  Chat
+                                </Button>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                        <div>
+                          <h5 className="mb-2 text-xs font-semibold">Lời mời kết bạn ({dir.requests.length})</h5>
+                          <ul className="max-h-48 space-y-2 overflow-y-auto">
+                            {dir.requests.map((friend) => (
+                              <li key={friend.userId} className="flex items-center justify-between gap-2 text-xs">
+                                <span className="truncate">{friend.displayName || friend.zaloName || friend.userId}</span>
+                                <Button size="sm" onClick={() => void acceptRequest(account, friend)}>
+                                  Chấp nhận
+                                </Button>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           </article>)}
         </div>

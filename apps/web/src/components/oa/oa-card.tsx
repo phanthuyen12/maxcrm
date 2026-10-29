@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Copy, Eye, EyeOff, Loader2, PlugZap, RefreshCw, Sparkles, X } from 'lucide-react';
+import { Copy, Eye, EyeOff, Loader2, PlugZap, RefreshCw, Sparkles, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/u
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import {
+  useDeleteOA,
   useReconnectOA,
   useRemoveStaffAccess,
   useRotateWebhookSecret,
@@ -31,6 +32,7 @@ const STATUS_META: Record<string, { label: string; variant: 'success' | 'warning
 
 export function OaCard({ oa }: { oa: ZaloOA }) {
   const reconnect = useReconnectOA();
+  const deleteOA = useDeleteOA();
   const updateAccess = useUpdateStaffAccess(oa.id);
   const removeAccess = useRemoveStaffAccess(oa.id);
   const rotateSecret = useRotateWebhookSecret();
@@ -66,7 +68,26 @@ export function OaCard({ oa }: { oa: ZaloOA }) {
             <p className="text-xs text-muted-foreground">ID: {oa.zaloOaId}</p>
           </div>
         </div>
-        <Badge variant={statusMeta.variant}>{statusMeta.label}</Badge>
+        <div className="flex items-center gap-2">
+          <Badge variant={statusMeta.variant}>{statusMeta.label}</Badge>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 gap-1.5 text-destructive hover:bg-destructive/10 hover:text-destructive"
+            disabled={deleteOA.isPending}
+            onClick={() => {
+              if (!window.confirm(`Xóa tài khoản Zalo OA "${oa.name}" (${oa.zaloOaId}) và các hội thoại liên quan?`)) return;
+              deleteOA.mutate(oa.id, {
+                onSuccess: () => toast.success(`Đã xóa tài khoản Zalo OA "${oa.name}"`),
+                onError: () => toast.error('Không thể xóa tài khoản Zalo OA'),
+              });
+            }}
+            title="Xóa tài khoản Zalo OA"
+          >
+            {deleteOA.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+            Xóa OA
+          </Button>
+        </div>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex items-center justify-between text-xs text-muted-foreground">

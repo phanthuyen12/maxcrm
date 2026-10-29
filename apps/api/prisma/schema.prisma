@@ -104,6 +104,7 @@ model User {
   deals             Deal[]            @relation("DealOwner")
   templates         MessageTemplate[] @relation("TemplateCreatedBy")
   oaAccess          OAStaffAccess[]
+  personalGroupAccess PersonalZaloGroupAccess[]
   activityLogs      ActivityLog[]     @relation("ActivityActor")
   notifications     Notification[]
 
@@ -141,6 +142,24 @@ model PersonalZaloAccount {
   status    String   @default("disconnected")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  groupAccess PersonalZaloGroupAccess[]
+}
+
+model PersonalZaloGroupAccess {
+  id        String   @id @default(cuid())
+  accountId String
+  groupId   String
+  groupName String?
+  userId    String
+  createdAt DateTime @default(now())
+
+  account PersonalZaloAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  user    User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, groupId, userId])
+  @@index([accountId, groupId])
+  @@index([userId])
 }
 
 model CustomerSource {

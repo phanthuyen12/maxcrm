@@ -65,16 +65,69 @@ export class PersonalZaloAccountsService implements OnModuleDestroy {
     });
   }
 
-  private async view(account: { id: string; name: string; proxyUrl: string | null; status: string; createdAt: Date }) {
+  private async getManagedGroups(accountId: string, channelId: string, viewerUserId?: string, viewerRole?: string) {
+    const [conversations, accessRows] = await Promise.all([
+      this.prisma.conversation.findMany({
+        where: { zaloOAId: channelId, customer: { zaloUserId: { startsWith: 'group:' } } },
+        select: { customer: { select: { name: true, zaloUserId: true } } },
+        orderBy: { lastMessageAt: 'desc' },
+      }),
+      this.prisma.personalZaloGroupAccess.findMany({
+        where: { accountId },
+        include: { user: { select: { id: true, name: true, avatar: true, role: true } } },
+        orderBy: { user: { name: 'asc' } },
+      }),
+    ]);
+
+    const groupMap = new Map<string, { id: string; name: string; assignedUsers: Array<{ id: string; name: string; avatar: string | null; role: string }> }>();
+
+    for (const conv of conversations) {
+      const groupId = conv.customer.zaloUserId?.replace(/^group:/, '');
+      if (!groupId) continue;
+      groupMap.set(groupId, {
+        id: groupId,
+        name: conv.customer.name || `Nhóm ${groupId}`,
+        assignedUsers: [],
+      });
+    }
+
+    for (const row of accessRows) {
+      let entry = groupMap.get(row.groupId);
+      if (!entry) {
+        entry = {
+          id: row.groupId,
+          name: row.groupName || `Nhóm ${row.groupId}`,
+          assignedUsers: [],
+        };
+        groupMap.set(row.groupId, entry);
+      } else if (row.groupName && entry.name.startsWith('Nhóm ')) {
+        entry.name = row.groupName;
+      }
+      if (!entry.assignedUsers.some((u) => u.id === row.user.id)) {
+        entry.assignedUsers.push(row.user);
+      }
+    }
+
+    const list = [...groupMap.values()];
+    if (viewerRole && viewerRole !== 'ADMIN' && viewerUserId) {
+      return list.filter((g) => g.assignedUsers.length === 0 || g.assignedUsers.some((u) => u.id === viewerUserId));
+    }
+    return list;
+  }
+
+  private async view(account: { id: string; name: string; proxyUrl: string | null; status: string; createdAt: Date }, viewerUserId?: string, viewerRole?: string) {
     const session = this.session(account.id);
     const channel = await this.channel(account);
-    const staffAccess = await this.prisma.oAStaffAccess.findMany({
-      where: { zaloOAId: channel.id },
-      include: { user: { select: { id: true, name: true, avatar: true, role: true } } },
-      orderBy: { user: { name: 'asc' } },
-    });
+    const [staffAccess, managedGroups] = await Promise.all([
+      this.prisma.oAStaffAccess.findMany({
+        where: { zaloOAId: channel.id },
+        include: { user: { select: { id: true, name: true, avatar: true, role: true } } },
+        orderBy: { user: { name: 'asc' } },
+      }),
+      this.getManagedGroups(account.id, channel.id, viewerUserId, viewerRole),
+    ]);
     return { id: account.id, name: account.name, hasProxy: Boolean(account.proxyUrl), proxyType: account.proxyUrl ? new URL(account.proxyUrl).protocol.slice(0, -1) : null,
-      status: session.status, qrImage: session.qrImage, createdAt: account.createdAt, channelId: channel.id, staffAccess };
+      status: session.status, qrImage: session.qrImage, createdAt: account.createdAt, channelId: channel.id, staffAccess, managedGroups };
   }
 
   async list(userId: string, role: string) {
@@ -83,7 +136,7 @@ export class PersonalZaloAccountsService implements OnModuleDestroy {
       const channel = await this.channel(account);
       return await this.prisma.oAStaffAccess.findUnique({ where: { userId_zaloOAId: { userId, zaloOAId: channel.id } }, select: { id: true } }) ? account : null;
     }));
-    return Promise.all(visible.filter((account): account is NonNullable<typeof account> => Boolean(account)).map((account) => this.view(account)));
+    return Promise.all(visible.filter((account): account is NonNullable<typeof account> => Boolean(account)).map((account) => this.view(account, userId, role)));
   }
 
   async create(name: string, proxyUrl?: string, ownerId?: string) {
@@ -254,18 +307,117 @@ export class PersonalZaloAccountsService implements OnModuleDestroy {
     if (!api) throw new BadRequestException('Tài khoản Zalo chưa kết nối');
     const all = await api.getAllGroups();
     const ids = Object.keys(all.gridVerMap);
-    const groups: Array<{ id: string; name: string; memberCount: number; members: Array<{ id: string; name: string; avatar: string }> }> = [];
+    const accessRows = await this.prisma.personalZaloGroupAccess.findMany({
+      where: { accountId: id },
+      include: { user: { select: { id: true, name: true, avatar: true, role: true } } },
+      orderBy: { user: { name: 'asc' } },
+    });
+    const accessByGroup = new Map<string, Array<{ id: string; name: string; avatar: string | null; role: string }>>();
+    for (const row of accessRows) {
+      const list = accessByGroup.get(row.groupId) ?? [];
+      if (!list.some((u) => u.id === row.user.id)) list.push(row.user);
+      accessByGroup.set(row.groupId, list);
+    }
+
+    const groups: Array<{
+      id: string;
+      name: string;
+      memberCount: number;
+      members: Array<{ id: string; name: string; avatar: string }>;
+      assignedUsers: Array<{ id: string; name: string; avatar: string | null; role: string }>;
+    }> = [];
     for (let offset = 0; offset < ids.length; offset += 50) {
       const info = await api.getGroupInfo(ids.slice(offset, offset + 50));
       for (const [groupId, group] of Object.entries(info.gridInfoMap ?? {})) {
         const memberIds = group.memberIds ?? [];
         const memberResponse = memberIds.length ? await api.getGroupMembersInfo(memberIds) : { profiles: {} };
-        groups.push({ id: groupId, name: group.name, memberCount: group.totalMember ?? memberIds.length,
-          members: Object.values(memberResponse.profiles).map((member) => ({ id: member.id, name: member.displayName || member.zaloName, avatar: member.avatar })) });
+        const assignedUsers = accessByGroup.get(groupId) ?? [];
+        if (assignedUsers.length > 0 && group.name) {
+          void this.prisma.personalZaloGroupAccess.updateMany({
+            where: { accountId: id, groupId },
+            data: { groupName: group.name },
+          });
+        }
+        groups.push({
+          id: groupId,
+          name: group.name,
+          memberCount: group.totalMember ?? memberIds.length,
+          members: Object.values(memberResponse.profiles).map((member) => ({ id: member.id, name: member.displayName || member.zaloName, avatar: member.avatar })),
+          assignedUsers,
+        });
       }
     }
+    const visibleGroups = role === 'ADMIN'
+      ? groups
+      : groups.filter((group) => group.assignedUsers.length === 0 || group.assignedUsers.some((u) => u.id === userId));
     this.gateway.emitPersonalZaloGroups({ accountId: id, groups });
-    return groups;
+    return visibleGroups;
+  }
+
+  async assignGroupAccess(accountId: string, groupId: string, targetUserId: string, groupName?: string) {
+    const account = await this.account(accountId);
+    const channel = await this.channel(account);
+    const user = await this.prisma.user.findUnique({ where: { id: targetUserId }, select: { id: true, isActive: true } });
+    if (!user?.isActive) throw new NotFoundException('Không tìm thấy nhân viên đang hoạt động');
+
+    // Đảm bảo nhân viên cũng có quyền truy cập trên kênh Zalo cá nhân này
+    await this.prisma.oAStaffAccess.upsert({
+      where: { userId_zaloOAId: { userId: targetUserId, zaloOAId: channel.id } },
+      update: {},
+      create: { userId: targetUserId, zaloOAId: channel.id, canSend: true },
+    });
+
+    await this.prisma.personalZaloGroupAccess.upsert({
+      where: { accountId_groupId_userId: { accountId, groupId, userId: targetUserId } },
+      update: { ...(groupName?.trim() ? { groupName: groupName.trim() } : {}) },
+      create: { accountId, groupId, userId: targetUserId, groupName: groupName?.trim() || null },
+    });
+
+    this.gateway.emitConversationUpdate({ zaloOAId: channel.id });
+    return this.getGroupAssignedUsers(accountId, groupId);
+  }
+
+  async removeGroupAccess(accountId: string, groupId: string, targetUserId: string) {
+    const account = await this.account(accountId);
+    const channel = await this.channel(account);
+    await this.prisma.personalZaloGroupAccess.deleteMany({
+      where: { accountId, groupId, userId: targetUserId },
+    });
+    this.gateway.emitConversationUpdate({ zaloOAId: channel.id });
+    return this.getGroupAssignedUsers(accountId, groupId);
+  }
+
+  async clearGroupAccess(accountId: string, groupId: string) {
+    const account = await this.account(accountId);
+    const channel = await this.channel(account);
+    await this.prisma.personalZaloGroupAccess.deleteMany({
+      where: { accountId, groupId },
+    });
+    this.gateway.emitConversationUpdate({ zaloOAId: channel.id });
+    return { groupId, assignedUsers: [] };
+  }
+
+  private async getGroupAssignedUsers(accountId: string, groupId: string) {
+    const rows = await this.prisma.personalZaloGroupAccess.findMany({
+      where: { accountId, groupId },
+      include: { user: { select: { id: true, name: true, avatar: true, role: true } } },
+      orderBy: { user: { name: 'asc' } },
+    });
+    return {
+      groupId,
+      assignedUsers: rows.map((r) => r.user),
+    };
+  }
+
+  private async assertGroupAccess(accountId: string, groupId: string, userId: string, role: string) {
+    if (role === 'ADMIN') return;
+    const rows = await this.prisma.personalZaloGroupAccess.findMany({
+      where: { accountId, groupId },
+      select: { userId: true },
+    });
+    if (rows.length > 0 && !rows.some((r) => r.userId === userId)) {
+      throw new ForbiddenException('Nhóm Zalo này đã được phân riêng cho sale khác');
+    }
   }
 
   async scanGroupLink(id: string, link: string, userId: string, role: string) {
@@ -540,6 +692,7 @@ export class PersonalZaloAccountsService implements OnModuleDestroy {
   async openChat(id: string, targetId: string, displayName: string, isGroup: boolean, userId: string, role: string) {
     const account = await this.account(id);
     await this.assertAccountAccess(account, userId, role);
+    if (isGroup) await this.assertGroupAccess(id, targetId, userId, role);
     if (!this.session(id).api) throw new BadRequestException('Tài khoản Zalo chưa kết nối');
     const channel = await this.channel(account);
     const zaloUserId = isGroup ? `group:${targetId}` : targetId;

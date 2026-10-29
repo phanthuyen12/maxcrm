@@ -99,6 +99,9 @@ export interface Conversation {
   lastMessageAt: string;
   isPinned: boolean;
   isGroup: boolean;
+  personalAccountId?: string | null;
+  personalGroupId?: string | null;
+  groupAssignedUsers?: UserSummary[];
   customer: Pick<Customer, 'id' | 'name' | 'phone' | 'avatar' | 'status'> & { tags?: { tag: Tag }[] };
   zaloOA: Pick<ZaloOA, 'id' | 'name' | 'avatar'>;
   assignedTo: UserSummary | null;

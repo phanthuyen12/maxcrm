@@ -19,10 +19,11 @@ export class AllExceptionsFilter implements ExceptionFilter {
       : HttpStatus.INTERNAL_SERVER_ERROR;
 
     const body = isHttp ? exception.getResponse() : null;
-    const message =
+    const rawMessage =
       typeof body === 'string'
         ? body
         : (body as any)?.message ?? (exception as Error)?.message ?? 'Đã có lỗi xảy ra';
+    const message = Array.isArray(rawMessage) ? rawMessage.join(', ') : String(rawMessage);
 
     response.status(status).json({
       statusCode: status,

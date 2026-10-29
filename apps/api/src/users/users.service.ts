@@ -52,13 +52,15 @@ export class UsersService {
 
   async createMember(input: { name: string; email: string; password: string; role: Role }, actorRole: Role = Role.ADMIN) {
     if (actorRole === Role.MANAGER && input.role !== Role.AGENT) throw new BadRequestException('Quản lý chỉ được tạo tài khoản nhân viên');
-    if (!input.name?.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email ?? '') || !input.password || input.password.length < 6 || !Object.values(Role).includes(input.role)) {
+    const normalizedEmail = (input.email ?? '').trim().toLowerCase();
+    const cleanPassword = (input.password ?? '').trim();
+    if (!input.name?.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail) || cleanPassword.length < 6 || !Object.values(Role).includes(input.role)) {
       throw new BadRequestException('Vui lòng nhập họ tên, email hợp lệ, mật khẩu tối thiểu 6 ký tự và vai trò');
     }
-    const exists = await this.prisma.user.findUnique({ where: { email: input.email } });
+    const exists = await this.prisma.user.findUnique({ where: { email: normalizedEmail } });
     if (exists) throw new ConflictException('Email này đã được sử dụng');
     return this.prisma.user.create({
-      data: { name: input.name.trim(), email: input.email.trim().toLowerCase(), passwordHash: await bcrypt.hash(input.password, 10), role: input.role },
+      data: { name: input.name.trim(), email: normalizedEmail, passwordHash: await bcrypt.hash(cleanPassword, 10), role: input.role },
       select: { ...baseSelect, isActive: true, createdAt: true },
     });
   }
@@ -69,6 +71,92 @@ export class UsersService {
     if (!exists) throw new NotFoundException('Không tìm thấy thành viên');
     if (actorRole === Role.MANAGER && exists.role !== Role.AGENT) throw new BadRequestException('Quản lý chỉ được quản lý tài khoản nhân viên');
     return this.prisma.user.update({ where: { id }, data: { isActive }, select: { ...baseSelect, isActive: true, createdAt: true } });
+  }
+
+  async updateMember(
+    id: string,
+    input: { name?: string; email?: string; password?: string; role?: Role },
+    actorId: string,
+    actorRole: Role = Role.ADMIN,
+  ) {
+    const exists = await this.prisma.user.findUnique({ where: { id }, select: { id: true, role: true } });
+    if (!exists) throw new NotFoundException('Không tìm thấy thành viên');
+
+    if (id !== actorId && actorRole === Role.MANAGER && exists.role !== Role.AGENT) {
+      throw new BadRequestException('Quản lý chỉ được cập nhật tài khoản nhân viên');
+    }
+
+    const data: { name?: string; email?: string; passwordHash?: string; role?: Role } = {};
+
+    if (input.name !== undefined) {
+      const trimmedName = input.name.trim();
+      if (!trimmedName) throw new BadRequestException('Vui lòng nhập họ tên');
+      data.name = trimmedName;
+    }
+
+    if (input.email !== undefined) {
+      const trimmedEmail = input.email.trim().toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+        throw new BadRequestException('Email không hợp lệ');
+      }
+      const conflict = await this.prisma.user.findFirst({
+        where: { email: trimmedEmail, NOT: { id } },
+        select: { id: true },
+      });
+      if (conflict) throw new ConflictException('Email này đã được sử dụng');
+      data.email = trimmedEmail;
+    }
+
+    if (input.password !== undefined && input.password.trim() !== '') {
+      const cleanPassword = input.password.trim();
+      if (cleanPassword.length < 6) {
+        throw new BadRequestException('Mật khẩu tối thiểu 6 ký tự');
+      }
+      data.passwordHash = await bcrypt.hash(cleanPassword, 10);
+    }
+
+    if (input.role !== undefined && input.role !== exists.role) {
+      if (id === actorId) {
+        throw new BadRequestException('Không thể tự thay đổi vai trò của tài khoản đang đăng nhập');
+      }
+      if (!Object.values(Role).includes(input.role)) {
+        throw new BadRequestException('Vai trò không hợp lệ');
+      }
+      if (actorRole === Role.MANAGER && input.role !== Role.AGENT) {
+        throw new BadRequestException('Quản lý chỉ được gán vai trò nhân viên');
+      }
+      data.role = input.role;
+    }
+
+    return this.prisma.user.update({
+      where: { id },
+      data,
+      select: { ...baseSelect, isActive: true, createdAt: true },
+    });
+  }
+
+  async deleteMember(id: string, actorId: string, actorRole: Role = Role.ADMIN) {
+    if (id === actorId) throw new ConflictException('Không thể xóa tài khoản đang đăng nhập');
+    const exists = await this.prisma.user.findUnique({ where: { id }, select: { id: true, role: true } });
+    if (!exists) throw new NotFoundException('Không tìm thấy thành viên');
+    if (actorRole === Role.MANAGER && exists.role !== Role.AGENT) {
+      throw new BadRequestException('Quản lý chỉ được xóa tài khoản nhân viên');
+    }
+
+    await this.prisma.$transaction([
+      this.prisma.customer.updateMany({ where: { assignedToId: id }, data: { assignedToId: null } }),
+      this.prisma.conversation.updateMany({ where: { assignedToId: id }, data: { assignedToId: null } }),
+      this.prisma.message.updateMany({ where: { senderId: id }, data: { senderId: null } }),
+      this.prisma.activityLog.updateMany({ where: { actorId: id }, data: { actorId: null } }),
+      this.prisma.note.updateMany({ where: { authorId: id }, data: { authorId: actorId } }),
+      this.prisma.appointment.updateMany({ where: { staffId: id }, data: { staffId: actorId } }),
+      this.prisma.deal.updateMany({ where: { ownerId: id }, data: { ownerId: actorId } }),
+      this.prisma.task.updateMany({ where: { assigneeId: id }, data: { assigneeId: actorId } }),
+      this.prisma.messageTemplate.updateMany({ where: { createdById: id }, data: { createdById: actorId } }),
+      this.prisma.user.delete({ where: { id } }),
+    ]);
+
+    return { success: true };
   }
 
   updateAvailability(id: string, dto: UpdateAvailabilityDto) {

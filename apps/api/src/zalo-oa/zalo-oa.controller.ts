@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, Put, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, UseGuards } from '@nestjs/common';
 import { ZaloOaService } from './zalo-oa.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
@@ -21,6 +21,20 @@ export class ZaloOaController {
   @Roles(Role.ADMIN, Role.MANAGER)
   findOne(@Param('id') id: string) {
     return this.zaloOaService.findOne(id);
+  }
+
+  @Patch(':id')
+  @UseGuards(RolesGuard)
+  @Roles(Role.ADMIN, Role.MANAGER)
+  update(@Param('id') id: string, @Body() body: { name?: string; dailyMessageLimit?: number }) {
+    return this.zaloOaService.update(id, body);
+  }
+
+  @Delete(':id')
+  @UseGuards(RolesGuard)
+  @Roles(Role.ADMIN, Role.MANAGER)
+  remove(@Param('id') id: string) {
+    return this.zaloOaService.remove(id);
   }
 
   @Post(':id/reconnect')

@@ -11,12 +11,21 @@ export class AuthService {
   ) {}
 
   async login(email: string, password: string) {
-    const user = await this.prisma.user.findUnique({ where: { email } });
+    const normalizedEmail = (email ?? '').trim().toLowerCase();
+    const user =
+      (await this.prisma.user.findUnique({ where: { email: normalizedEmail } })) ??
+      (normalizedEmail !== (email ?? '').trim()
+        ? await this.prisma.user.findUnique({ where: { email: (email ?? '').trim() } })
+        : null);
     if (!user || !user.isActive) {
       throw new UnauthorizedException('Email hoặc mật khẩu không đúng');
     }
 
-    const matches = await bcrypt.compare(password, user.passwordHash);
+    const rawPassword = password ?? '';
+    const trimmedPassword = rawPassword.trim();
+    const matches =
+      (await bcrypt.compare(rawPassword, user.passwordHash)) ||
+      (trimmedPassword !== rawPassword && (await bcrypt.compare(trimmedPassword, user.passwordHash)));
     if (!matches) {
       throw new UnauthorizedException('Email hoặc mật khẩu không đúng');
     }
@@ -43,7 +52,7 @@ export class AuthService {
 
   async me(userId: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user) throw new UnauthorizedException();
+    if (!user || !user.isActive) throw new UnauthorizedException();
     return {
       id: user.id,
       email: user.email,
