@@ -1,4 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException, OnModuleDestroy } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { randomUUID } from 'node:crypto';
 import { API, LoginQRCallbackEventType, ThreadType, Zalo } from 'zca-js';
 import nodeFetch from 'node-fetch';
@@ -40,7 +41,11 @@ export class PersonalZaloAccountsService implements OnModuleDestroy {
   private readonly seenMessageIds = new Set<string>();
   private readonly bulkBatches = new Map<string, BulkBatch>();
 
-  constructor(private readonly prisma: PrismaService, private readonly gateway: InboxGateway) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly gateway: InboxGateway,
+    private readonly events: EventEmitter2,
+  ) {}
 
   private session(id: string): AccountSession {
     let session = this.sessions.get(id);
@@ -822,7 +827,10 @@ export class PersonalZaloAccountsService implements OnModuleDestroy {
     }
     this.gateway.emitNewMessage(conversation.id, message);
     this.gateway.emitConversationUpdate({ ...conversation, zaloOAId: channel.id });
-    if (!isSelf) await this.gateway.notifyAssignedUser(conversation.id, message);
+    if (!isSelf) {
+      await this.gateway.notifyAssignedUser(conversation.id, message);
+      this.events.emit('inbound.message', { conversationId: conversation.id, zaloOAId: channel.id });
+    }
     if (!isSelf && activeApi && (isGroup || shouldLookupProfile)) {
       void this.enrichInboundMessage({ api: activeApi, accountId, groupId: isGroup ? threadId : undefined, customerId: customer.id, conversationId: conversation.id, messageId: message.id, channelId: channel.id, senderId: externalSenderId, isGroup })
         .catch((error) => console.error(`Zalo profile refresh failed (${accountId}):`, error));

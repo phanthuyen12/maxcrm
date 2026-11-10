@@ -193,3 +193,46 @@ export interface StaffPerformance extends UserSummary {
   totalDeals: number;
   pendingTasks: number;
 }
+
+export type AiProvider = 'ANTHROPIC' | 'OPENAI' | 'GOOGLE' | 'OPENROUTER' | 'DEEPSEEK';
+
+export interface OpenRouterModel {
+  id: string;
+  name: string;
+}
+
+export interface AiBotRule {
+  label: string;
+  content: string;
+}
+
+export interface AiBotConfig {
+  id: string;
+  zaloOAId: string;
+  name: string;
+  isEnabled: boolean;
+  provider: AiProvider;
+  apiKey: string;
+  model: string;
+  systemPrompt: string;
+  rules: AiBotRule[] | null;
+  knowledgeBase: string | null;
+  temperature: number;
+  documentCount: number;
+}
+
+export interface AiBotChannel {
+  id: string;
+  name: string;
+  provider: string;
+  zaloOaId: string;
+  bots: AiBotConfig[];
+}
+
+export interface AiBotDocument {
+  id: string;
+  fileName: string;
+  charCount: number;
+  chunkCount: number;
+  createdAt: string;
+}

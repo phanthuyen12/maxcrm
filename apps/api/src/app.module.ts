@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
@@ -19,10 +20,12 @@ import { CatalogModule } from './catalog/catalog.module';
 import { SocialChannelsModule } from './social-channels/social-channels.module';
 import { BackupModule } from './backup/backup.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { AiBotModule } from './ai-bot/ai-bot.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    EventEmitterModule.forRoot(),
     PrismaModule,
     GatewayModule,
     JobsModule,
@@ -42,6 +45,7 @@ import { NotificationsModule } from './notifications/notifications.module';
     SocialChannelsModule,
     BackupModule,
     NotificationsModule,
+    AiBotModule,
   ],
 })
 export class AppModule {}

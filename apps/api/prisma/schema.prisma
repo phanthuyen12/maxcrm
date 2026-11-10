@@ -82,6 +82,14 @@ enum TaskPriority {
   HIGH
 }
 
+enum AiProvider {
+  ANTHROPIC
+  OPENAI
+  GOOGLE
+  OPENROUTER
+  DEEPSEEK
+}
+
 model User {
   id                 String   @id @default(cuid())
   email              String   @unique
@@ -131,8 +139,57 @@ model ZaloOA {
 
   conversations Conversation[]
   staffAccess   OAStaffAccess[]
+  aiBots        AiBot[]
 
   @@index([provider])
+}
+
+model AiBot {
+  id            String     @id @default(cuid())
+  zaloOAId      String
+  name          String     @default("Bot mới")
+  isEnabled     Boolean    @default(false)
+  provider      AiProvider @default(ANTHROPIC)
+  apiKey        String     @db.Text
+  model         String
+  systemPrompt  String     @db.Text
+  rules         Json?
+  knowledgeBase String?    @db.Text
+  temperature   Float      @default(0.4)
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  zaloOA    ZaloOA           @relation(fields: [zaloOAId], references: [id], onDelete: Cascade)
+  documents AiBotDocument[]
+
+  @@index([zaloOAId])
+}
+
+model AiBotDocument {
+  id         String   @id @default(cuid())
+  aiBotId    String
+  fileName   String
+  charCount  Int
+  chunkCount Int
+  createdAt  DateTime @default(now())
+
+  aiBot  AiBot        @relation(fields: [aiBotId], references: [id], onDelete: Cascade)
+  chunks AiBotChunk[]
+
+  @@index([aiBotId])
+}
+
+model AiBotChunk {
+  id         String   @id @default(cuid())
+  documentId String
+  content    String   @db.Text
+  vector     String   @db.Text
+  order      Int
+  createdAt  DateTime @default(now())
+
+  document AiBotDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
 }
 
 model PersonalZaloAccount {
@@ -195,6 +252,7 @@ model Customer {
   source       String         @default("Zalo OA")
   status       CustomerStatus @default(NEW)
   assignedToId String?
+  aiMemory     String?        @db.Text
   createdAt    DateTime       @default(now())
   updatedAt    DateTime       @updatedAt
 

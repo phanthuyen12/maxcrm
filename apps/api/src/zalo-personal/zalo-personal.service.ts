@@ -1,4 +1,5 @@
 import { Injectable, OnModuleDestroy } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { API, LoginQRCallbackEventType, ThreadType, Zalo } from 'zca-js';
 import { imageMetadataGetter } from './image-metadata';
 import { getZaloGroupProfile, getZaloUserProfile, invalidateZaloGroupProfile } from './zalo-user-profile';
@@ -27,7 +28,11 @@ export class PersonalZaloService implements OnModuleDestroy {
   private listenerRetryCount = 0;
   private readonly seenMessageIds = new Set<string>();
 
-  constructor(private readonly prisma: PrismaService, private readonly gateway: InboxGateway) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly gateway: InboxGateway,
+    private readonly events: EventEmitter2,
+  ) {}
 
   getStatus() {
     return { status: this.state, qrImage: this.qrImage };
@@ -213,7 +218,10 @@ export class PersonalZaloService implements OnModuleDestroy {
         if (this.seenMessageIds.size > 10_000) this.seenMessageIds.clear();
       }
       this.gateway.emitNewMessage(conversation.id, persistedMessage);
-      if (!isSelf) await this.gateway.notifyAssignedUser(conversation.id, persistedMessage);
+      if (!isSelf) {
+        await this.gateway.notifyAssignedUser(conversation.id, persistedMessage);
+        this.events.emit('inbound.message', { conversationId: conversation.id, zaloOAId: channel.id });
+      }
       const updated = await this.prisma.conversation.findUnique({
         where: { id: conversation.id },
         include: {

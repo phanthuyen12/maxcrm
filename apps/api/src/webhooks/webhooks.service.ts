@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../prisma/prisma.service';
 import { InboxGateway } from '../gateway/inbox.gateway';
 
@@ -29,6 +30,7 @@ export class WebhooksService {
   constructor(
     private prisma: PrismaService,
     private gateway: InboxGateway,
+    private events: EventEmitter2,
   ) {}
 
   verifySecret(oaSecret: string | null | undefined, provided?: string) {
@@ -120,6 +122,7 @@ export class WebhooksService {
     this.gateway.emitNewMessage(conversationId, message);
     this.gateway.emitConversationUpdate(updated);
     await this.gateway.notifyAssignedUser(conversationId, message);
+    this.events.emit('inbound.message', { conversationId, zaloOAId: conversation.zaloOAId });
 
     return message;
   }

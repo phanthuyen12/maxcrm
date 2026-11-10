@@ -11,7 +11,6 @@ import {
   CheckSquare,
   MessageSquareText,
   BarChart3,
-  Link2,
   Smartphone,
   Building2,
   Facebook,
@@ -19,6 +18,7 @@ import {
   Blocks,
   ScanSearch,
   Send,
+  Bot,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useUnreadCount } from '@/hooks/use-conversations';
@@ -40,10 +40,10 @@ const NAV_GROUPS = [
   ] },
   { label: 'Quản trị & tích hợp', items: [
   { href: '/team', label: 'Thành viên', icon: Users },
-  { href: '/connections', label: 'Tổng hợp kết nối', icon: Link2 },
   { href: '/oa-connections', label: 'Kết nối Zalo OA', icon: Building2 },
   { href: '/social-channels', label: 'Telegram & Facebook', icon: Facebook },
   { href: '/personal-zalo', label: 'Zalo cá nhân', icon: Smartphone },
+  { href: '/ai-bot', label: 'Trợ lý AI', icon: Bot },
   { href: '/group-scanner', label: 'Quét member group', icon: ScanSearch },
   { href: '/bulk-message', label: 'Gửi tin theo danh sách', icon: Send },
   ] },
@@ -73,7 +73,8 @@ export function Sidebar() {
   const allowed = (item: (typeof NAV_GROUPS)[number]['items'][number]) => {
     if (currentUser?.role === 'CHAT') return item.href === '/inbox';
     if (item.href === '/reports') return currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER';
-    if (['/connections', '/oa-connections', '/social-channels'].includes(item.href)) return currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER';
+    if (['/oa-connections', '/social-channels'].includes(item.href)) return currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER';
+    // AGENT cũng được vào /ai-bot — quyền cấu hình bot theo từng kênh được API kiểm tra qua OAStaffAccess.
     if (item.href === '/team') return currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER';
     if (item.href === '/personal-zalo') return currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER';
     if (item.href === '/group-scanner') return currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER';

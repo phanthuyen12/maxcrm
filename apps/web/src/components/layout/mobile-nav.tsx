@@ -33,7 +33,6 @@ const NAV_ITEMS = [
   { href: '/tasks', label: 'Công việc', icon: CheckSquare },
   { href: '/templates', label: 'Mẫu tin nhắn', icon: MessageSquareText },
   { href: '/reports', label: 'Báo cáo', icon: BarChart3 },
-  { href: '/connections', label: 'Tổng hợp kết nối', icon: Link2 },
   { href: '/oa-connections', label: 'Kết nối Zalo OA', icon: Link2 },
   { href: '/social-channels', label: 'Telegram & Facebook', icon: Facebook },
   { href: '/personal-zalo', label: 'Zalo cá nhân', icon: Smartphone },
@@ -50,7 +49,7 @@ export function MobileNav() {
   const navItems = NAV_ITEMS.filter((item) => {
     if (currentUser?.role === 'CHAT') return item.href === '/inbox';
     if (item.href === '/reports') return currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER';
-    if (['/connections', '/oa-connections', '/social-channels'].includes(item.href)) return currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER';
+    if (['/oa-connections', '/social-channels'].includes(item.href)) return currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER';
     if (['/group-scanner', '/bulk-message', '/personal-zalo'].includes(item.href)) return currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER';
     if (item.href === '/team') return currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER';
     return true;

@@ -187,6 +187,30 @@ export class ConversationsService {
     return message;
   }
 
+  /** Gửi tin nhắn tự động từ trợ lý AI — không qua kiểm tra quyền nhân viên vì người gửi là hệ thống. */
+  async sendBotMessage(conversationId: string, content: string) {
+    const message = await this.prisma.message.create({
+      data: { conversationId, direction: 'OUT', type: 'TEXT', content, status: 'SENDING' },
+      include: { sender: { select: { id: true, name: true, avatar: true } } },
+    });
+
+    const updated = await this.prisma.conversation.update({
+      where: { id: conversationId },
+      data: { lastMessageAt: new Date(), status: 'PROCESSING' },
+      include: conversationInclude,
+    });
+
+    this.gateway.emitNewMessage(conversationId, message);
+    this.gateway.emitConversationUpdate(updated);
+
+    await this.outboundQueue.add('send', {
+      messageId: message.id,
+      conversationId,
+    });
+
+    return message;
+  }
+
   private async assertChannelAccess(channelId: string, userId: string, canSend: boolean, role = 'AGENT') {
     if (role === 'ADMIN') return;
     const access = await this.prisma.oAStaffAccess.findUnique({ where: { userId_zaloOAId: { userId, zaloOAId: channelId } } });
