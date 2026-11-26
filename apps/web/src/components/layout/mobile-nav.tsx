@@ -20,6 +20,7 @@ import {
   Blocks,
   ScanSearch,
   Send,
+  CalendarClock,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -39,6 +40,7 @@ const NAV_ITEMS = [
   { href: '/team', label: 'Quản lý tài khoản', icon: Users },
   { href: '/group-scanner', label: 'Quét member group', icon: ScanSearch },
   { href: '/bulk-message', label: 'Gửi tin theo danh sách', icon: Send },
+  { href: '/group-broadcast', label: 'Hẹn giờ gửi nhóm', icon: CalendarClock },
   { href: '/settings', label: 'Cài đặt', icon: Settings },
 ];
 
@@ -50,7 +52,7 @@ export function MobileNav() {
     if (currentUser?.role === 'CHAT') return item.href === '/inbox';
     if (item.href === '/reports') return currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER';
     if (['/oa-connections', '/social-channels'].includes(item.href)) return currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER';
-    if (['/group-scanner', '/bulk-message', '/personal-zalo'].includes(item.href)) return currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER';
+    if (['/group-scanner', '/bulk-message', '/group-broadcast', '/personal-zalo'].includes(item.href)) return currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER';
     if (item.href === '/team') return currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER';
     return true;
   });

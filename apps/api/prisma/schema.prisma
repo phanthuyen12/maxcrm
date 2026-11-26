@@ -90,6 +90,22 @@ enum AiProvider {
   DEEPSEEK
 }
 
+enum GroupBroadcastStatus {
+  SCHEDULED
+  RUNNING
+  COMPLETED
+  FAILED
+  PAUSED
+  CANCELED
+}
+
+enum GroupBroadcastRepeat {
+  NONE
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
 model User {
   id                 String   @id @default(cuid())
   email              String   @unique
@@ -113,6 +129,7 @@ model User {
   templates         MessageTemplate[] @relation("TemplateCreatedBy")
   oaAccess          OAStaffAccess[]
   personalGroupAccess PersonalZaloGroupAccess[]
+  groupBroadcasts   GroupBroadcast[]  @relation("GroupBroadcastAuthor")
   activityLogs      ActivityLog[]     @relation("ActivityActor")
   notifications     Notification[]
 
@@ -201,6 +218,64 @@ model PersonalZaloAccount {
   updatedAt DateTime @updatedAt
 
   groupAccess PersonalZaloGroupAccess[]
+  broadcasts  GroupBroadcast[]
+}
+
+/// Một tin nhắn hẹn giờ gửi vào nhiều nhóm Zalo của cùng một tài khoản cá nhân.
+model GroupBroadcast {
+  id          String               @id @default(cuid())
+  accountId   String
+  name        String
+  contentHtml String               @db.Text
+  contentText String               @db.Text
+  styles      Json?
+  repeat      GroupBroadcastRepeat @default(NONE)
+  repeatDays  String?
+  scheduledAt DateTime
+  nextRunAt   DateTime?
+  lastRunAt   DateTime?
+  status      GroupBroadcastStatus @default(SCHEDULED)
+  intervalMs  Int                  @default(2000)
+  createdById String?
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  account   PersonalZaloAccount    @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdBy User?                  @relation("GroupBroadcastAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+  targets   GroupBroadcastTarget[]
+  runs      GroupBroadcastRun[]
+
+  @@index([accountId])
+  @@index([status, nextRunAt])
+  @@index([createdById])
+}
+
+model GroupBroadcastTarget {
+  id          String @id @default(cuid())
+  broadcastId String
+  groupId     String
+  groupName   String
+
+  broadcast GroupBroadcast @relation(fields: [broadcastId], references: [id], onDelete: Cascade)
+
+  @@unique([broadcastId, groupId])
+  @@index([broadcastId])
+}
+
+model GroupBroadcastRun {
+  id          String    @id @default(cuid())
+  broadcastId String
+  status      String    @default("running")
+  total       Int       @default(0)
+  sent        Int       @default(0)
+  failed      Int       @default(0)
+  results     Json?
+  startedAt   DateTime  @default(now())
+  finishedAt  DateTime?
+
+  broadcast GroupBroadcast @relation(fields: [broadcastId], references: [id], onDelete: Cascade)
+
+  @@index([broadcastId, startedAt])
 }
 
 model PersonalZaloGroupAccess {

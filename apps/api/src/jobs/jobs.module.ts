@@ -6,8 +6,10 @@ import { GatewayModule } from '../gateway/gateway.module';
 import { OutboundMessageProcessor } from './outbound-message.processor';
 import { OaSyncProcessor } from './oa-sync.processor';
 import { OverdueScannerProcessor } from './overdue-scanner.processor';
-import { QUEUE_OA_SYNC, QUEUE_OUTBOUND_MESSAGE, QUEUE_OVERDUE_SCANNER } from './queues';
+import { GroupBroadcastProcessor } from './group-broadcast.processor';
+import { QUEUE_GROUP_BROADCAST, QUEUE_OA_SYNC, QUEUE_OUTBOUND_MESSAGE, QUEUE_OVERDUE_SCANNER } from './queues';
 import { PersonalZaloModule } from '../zalo-personal/zalo-personal.module';
+import { GroupBroadcastModule } from '../group-broadcast/group-broadcast.module';
 
 @Module({
   imports: [
@@ -21,16 +23,19 @@ import { PersonalZaloModule } from '../zalo-personal/zalo-personal.module';
       { name: QUEUE_OUTBOUND_MESSAGE },
       { name: QUEUE_OA_SYNC },
       { name: QUEUE_OVERDUE_SCANNER },
+      { name: QUEUE_GROUP_BROADCAST },
     ),
     GatewayModule,
     PersonalZaloModule,
+    GroupBroadcastModule,
   ],
-  providers: [OutboundMessageProcessor, OaSyncProcessor, OverdueScannerProcessor],
+  providers: [OutboundMessageProcessor, OaSyncProcessor, OverdueScannerProcessor, GroupBroadcastProcessor],
   exports: [BullModule],
 })
 export class JobsModule implements OnApplicationBootstrap {
   constructor(
     @InjectQueue(QUEUE_OVERDUE_SCANNER) private overdueQueue: Queue,
+    @InjectQueue(QUEUE_GROUP_BROADCAST) private groupBroadcastQueue: Queue,
   ) {}
 
   async onApplicationBootstrap() {
@@ -40,6 +45,17 @@ export class JobsModule implements OnApplicationBootstrap {
       {
         repeat: { every: 5 * 60 * 1000 },
         jobId: 'overdue-scanner-repeat',
+      },
+    );
+    // Bộ quét lịch gửi nhóm chạy mỗi phút để tin được phát sát mốc hẹn giờ.
+    await this.groupBroadcastQueue.add(
+      'scan',
+      {},
+      {
+        repeat: { every: 60 * 1000 },
+        jobId: 'group-broadcast-repeat',
+        removeOnComplete: 20,
+        removeOnFail: 50,
       },
     );
   }

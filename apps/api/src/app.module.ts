@@ -21,6 +21,7 @@ import { SocialChannelsModule } from './social-channels/social-channels.module';
 import { BackupModule } from './backup/backup.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { AiBotModule } from './ai-bot/ai-bot.module';
+import { GroupBroadcastModule } from './group-broadcast/group-broadcast.module';
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { AiBotModule } from './ai-bot/ai-bot.module';
     BackupModule,
     NotificationsModule,
     AiBotModule,
+    GroupBroadcastModule,
   ],
 })
 export class AppModule {}

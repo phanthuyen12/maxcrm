@@ -19,6 +19,7 @@ import {
   ScanSearch,
   Send,
   Bot,
+  CalendarClock,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useUnreadCount } from '@/hooks/use-conversations';
@@ -46,6 +47,7 @@ const NAV_GROUPS = [
   { href: '/ai-bot', label: 'Trợ lý AI', icon: Bot },
   { href: '/group-scanner', label: 'Quét member group', icon: ScanSearch },
   { href: '/bulk-message', label: 'Gửi tin theo danh sách', icon: Send },
+  { href: '/group-broadcast', label: 'Hẹn giờ gửi nhóm', icon: CalendarClock },
   ] },
   { label: '', items: [
   { href: '/settings', label: 'Cài đặt', icon: Settings },
@@ -79,6 +81,7 @@ export function Sidebar() {
     if (item.href === '/personal-zalo') return currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER';
     if (item.href === '/group-scanner') return currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER';
     if (item.href === '/bulk-message') return currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER';
+    if (item.href === '/group-broadcast') return currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER';
     return true;
   };
 
