@@ -3,8 +3,8 @@
 import * as React from 'react';
 import { toast } from 'sonner';
 import {
-  AlertCircle, CalendarClock, Check, CheckCircle2, Clock3, Eye, Loader2, Pause, Pencil, Play,
-  RefreshCw, Search, Send, Trash2, Users, X, XCircle,
+  AlertCircle, ArrowLeft, ArrowRight, CalendarClock, Check, CheckCircle2, Clock3, Eye, ImagePlus,
+  Loader2, Pause, Pencil, Play, RefreshCw, Search, Send, Trash2, Users, X, XCircle,
 } from 'lucide-react';
 import { Topbar } from '@/components/layout/topbar';
 import { Button } from '@/components/ui/button';
@@ -13,8 +13,9 @@ import { RichTextEditor } from '@/components/group-broadcast/rich-text-editor';
 import { api } from '@/lib/api';
 import { cn, formatDateTime, formatRelativeTime } from '@/lib/utils';
 import {
-  useBroadcastAction, useDeleteGroupBroadcast, useGroupBroadcasts, useSaveGroupBroadcast, useZaloGroups,
-  type BroadcastRepeat, type BroadcastStatus, type GroupBroadcast,
+  useBroadcastAction, useDeleteGroupBroadcast, useGroupBroadcasts, useSaveGroupBroadcast,
+  useUploadBroadcastImages, useZaloGroups,
+  type BroadcastImage, type BroadcastRepeat, type BroadcastStatus, type GroupBroadcast,
 } from '@/hooks/use-group-broadcasts';
 
 type Account = { id: string; name: string; status: string };
@@ -58,6 +59,7 @@ const emptyForm = () => ({
   accountId: '',
   name: '',
   contentHtml: '',
+  images: [] as BroadcastImage[],
   scheduledAt: defaultSchedule(),
   repeat: 'NONE' as BroadcastRepeat,
   repeatDays: [1] as number[],
@@ -84,6 +86,7 @@ export default function GroupBroadcastPage() {
   const broadcasts = useGroupBroadcasts();
   const groups = useZaloGroups(form.accountId);
   const save = useSaveGroupBroadcast();
+  const upload = useUploadBroadcastImages();
   const action = useBroadcastAction();
   const remove = useDeleteGroupBroadcast();
 
@@ -137,6 +140,7 @@ export default function GroupBroadcastPage() {
       accountId: broadcast.accountId,
       name: broadcast.name,
       contentHtml: broadcast.contentHtml,
+      images: broadcast.images,
       scheduledAt: toInputValue(new Date(broadcast.nextRunAt ?? broadcast.scheduledAt)),
       repeat: broadcast.repeat,
       repeatDays: broadcast.repeatDays.length ? broadcast.repeatDays : [1],
@@ -159,6 +163,7 @@ export default function GroupBroadcastPage() {
         name: form.name.trim(),
         contentHtml: form.contentHtml,
         targets: form.targets,
+        images: form.images,
         scheduledAt: scheduledAt.toISOString(),
         repeat: form.repeat,
         repeatDays: form.repeat === 'WEEKLY' ? form.repeatDays : undefined,
@@ -194,8 +199,29 @@ export default function GroupBroadcastPage() {
     }
   };
 
+  const addImages = async (files: FileList | null) => {
+    if (!files?.length) return;
+    const room = 10 - form.images.length;
+    if (room <= 0) { toast.error('Mỗi tin chỉ gửi kèm tối đa 10 ảnh.'); return; }
+    try {
+      const uploaded = await upload.mutateAsync([...files].slice(0, room));
+      setForm((current) => ({ ...current, images: [...current.images, ...uploaded.map(({ url, name }) => ({ url, name }))].slice(0, 10) }));
+      if (files.length > room) toast.warning(`Chỉ thêm được ${room} ảnh nữa cho tin này.`);
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : 'Không tải được ảnh lên');
+    }
+  };
+
+  const moveImage = (index: number, direction: -1 | 1) => setForm((current) => {
+    const next = [...current.images];
+    const target = index + direction;
+    if (target < 0 || target >= next.length) return current;
+    [next[index], next[target]] = [next[target], next[index]];
+    return { ...current, images: next };
+  });
+
   const hasContent = form.contentHtml.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim().length > 0;
-  const canSubmit = Boolean(form.accountId && form.name.trim() && form.targets.length && hasContent) && !save.isPending;
+  const canSubmit = Boolean(form.accountId && form.name.trim() && form.targets.length && (hasContent || form.images.length)) && !save.isPending && !upload.isPending;
 
   return <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
     <Topbar title="Hẹn giờ gửi tin nhóm Zalo" />
@@ -301,10 +327,48 @@ export default function GroupBroadcastPage() {
               </div>
             </div>
 
+            <div className="space-y-2 text-sm">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="font-medium">Ảnh gửi kèm</span>
+                <span className="text-xs text-muted-foreground">{form.images.length}/10 ảnh · JPG, PNG, WEBP, GIF · tối đa 10MB mỗi ảnh</span>
+              </div>
+              <div className="flex flex-wrap gap-2.5">
+                {form.images.map((image, index) => <div key={image.url} className="group relative h-24 w-24 overflow-hidden rounded-xl border bg-secondary/40">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={image.url} alt={image.name} title={image.name} className="h-full w-full object-cover" />
+                  <span className="absolute left-1 top-1 rounded-full bg-black/60 px-1.5 text-[10px] font-semibold text-white tabular-nums">{index + 1}</span>
+                  <button
+                    type="button"
+                    aria-label={`Bỏ ảnh ${image.name}`}
+                    onClick={() => setForm((current) => ({ ...current, images: current.images.filter((item) => item.url !== image.url) }))}
+                    className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-black/60 text-white transition-colors hover:bg-destructive"
+                  ><X className="h-3 w-3" /></button>
+                  <div className="absolute inset-x-0 bottom-0 flex justify-between bg-black/55 opacity-0 transition-opacity group-hover:opacity-100">
+                    <button type="button" aria-label="Chuyển ảnh lên trước" disabled={index === 0} onClick={() => moveImage(index, -1)} className="flex h-6 flex-1 items-center justify-center text-white disabled:opacity-30"><ArrowLeft className="h-3.5 w-3.5" /></button>
+                    <button type="button" aria-label="Chuyển ảnh xuống sau" disabled={index === form.images.length - 1} onClick={() => moveImage(index, 1)} className="flex h-6 flex-1 items-center justify-center text-white disabled:opacity-30"><ArrowRight className="h-3.5 w-3.5" /></button>
+                  </div>
+                </div>)}
+                {form.images.length < 10 && <label className={cn('flex h-24 w-24 cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border border-dashed bg-background text-xs text-muted-foreground transition-colors hover:border-primary/50 hover:bg-secondary/40', upload.isPending && 'pointer-events-none opacity-60')}>
+                  {upload.isPending ? <Loader2 className="h-5 w-5 animate-spin" /> : <ImagePlus className="h-5 w-5" />}
+                  <span>{upload.isPending ? 'Đang tải…' : 'Thêm ảnh'}</span>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,image/gif"
+                    multiple
+                    disabled={upload.isPending}
+                    onChange={(event) => { const files = event.target.files; event.currentTarget.value = ''; void addImages(files); }}
+                    className="sr-only"
+                  />
+                </label>}
+              </div>
+              {form.images.length > 1 && <p className="text-xs text-muted-foreground">Nhiều ảnh được gửi thành một chùm ảnh, theo thứ tự đã đánh số.</p>}
+              {form.images.length === 1 && hasContent && <p className="text-xs text-muted-foreground">Một ảnh kèm chữ không định dạng sẽ gửi chữ làm chú thích ảnh; nếu chữ có định dạng thì chữ đi thành tin riêng trước ảnh.</p>}
+            </div>
+
             {error && <div role="alert" className="flex items-start gap-2 rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2.5 text-sm text-destructive"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /><span>{error}</span></div>}
 
             <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
-              <p className="text-xs text-muted-foreground">Tin được gửi tuần tự từng nhóm, giãn cách {(form.intervalMs / 1000).toFixed(1)} giây.</p>
+              <p className="text-xs text-muted-foreground">Tin{form.images.length > 0 ? ' và ảnh' : ''} được gửi tuần tự từng nhóm, giãn cách {(form.intervalMs / 1000).toFixed(1)} giây.</p>
               <Button type="submit" disabled={!canSubmit} className="h-10 min-w-40 rounded-lg px-4">
                 {save.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CalendarClock className="h-4 w-4" />}
                 {save.isPending ? 'Đang lưu…' : editing ? 'Lưu thay đổi' : `Hẹn giờ gửi ${form.targets.length} nhóm`}
@@ -362,9 +426,14 @@ export default function GroupBroadcastPage() {
 
             <div className="space-y-2 rounded-xl border border-dashed p-3">
               <p className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground"><Eye className="h-3.5 w-3.5" />Zalo sẽ nhận được</p>
-              {preview?.text
-                ? <p className="whitespace-pre-wrap break-words text-sm leading-6">{preview.text}</p>
-                : <p className="text-xs text-muted-foreground">Nhập nội dung để xem trước.</p>}
+              {preview?.text && <p className="whitespace-pre-wrap break-words text-sm leading-6">{preview.text}</p>}
+              {form.images.length > 0 && <div className="flex flex-wrap gap-1.5">
+                {form.images.map((image) => <span key={image.url} className="h-12 w-12 overflow-hidden rounded-lg border bg-secondary/40">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={image.url} alt={image.name} className="h-full w-full object-cover" />
+                </span>)}
+              </div>}
+              {!preview?.text && form.images.length === 0 && <p className="text-xs text-muted-foreground">Nhập nội dung hoặc thêm ảnh để xem trước.</p>}
             </div>
           </aside>
         </form>
@@ -397,6 +466,7 @@ export default function GroupBroadcastPage() {
                     </div>
                     <p className="mt-1 text-xs text-muted-foreground">
                       {broadcast.account.name} · {describeRepeat(broadcast)} · {broadcast.targets.length} nhóm
+                      {broadcast.images.length > 0 ? ` · ${broadcast.images.length} ảnh` : ''}
                       {broadcast.createdBy ? ` · tạo bởi ${broadcast.createdBy.name}` : ''}
                     </p>
                   </div>
@@ -425,7 +495,15 @@ export default function GroupBroadcastPage() {
                   </div>
                 </div>
 
-                <p className="line-clamp-2 whitespace-pre-wrap break-words rounded-lg bg-secondary/50 px-3 py-2 text-sm text-muted-foreground">{broadcast.contentText}</p>
+                <div className="space-y-2 rounded-lg bg-secondary/50 px-3 py-2">
+                  {broadcast.contentText && <p className="line-clamp-2 whitespace-pre-wrap break-words text-sm text-muted-foreground">{broadcast.contentText}</p>}
+                  {broadcast.images.length > 0 && <div className="flex flex-wrap gap-1.5">
+                    {broadcast.images.map((image) => <span key={image.url} className="h-11 w-11 overflow-hidden rounded-md border bg-background">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={image.url} alt={image.name} title={image.name} className="h-full w-full object-cover" />
+                    </span>)}
+                  </div>}
+                </div>
 
                 <div className="flex flex-wrap items-center gap-1.5">
                   {broadcast.targets.slice(0, open ? undefined : 6).map((target) => <span key={target.groupId} className="inline-flex max-w-[220px] items-center gap-1 rounded-full border bg-background px-2 py-0.5 text-xs">

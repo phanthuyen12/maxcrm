@@ -9,6 +9,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { InboxGateway } from '../gateway/inbox.gateway';
 import { getZaloImageUrl, isZaloImageMessage } from './zalo-image';
 import type { Style } from 'zca-js';
+import { existingUploadPath } from './upload-path';
 
 const HttpsProxyAgent: new (proxyUrl: string) => any = require('https-proxy-agent').HttpsProxyAgent;
 const SocksProxyAgent: new (proxyUrl: string) => any = require('socks-proxy-agent').SocksProxyAgent;
@@ -834,14 +835,24 @@ export class PersonalZaloAccountsService implements OnModuleDestroy {
   }
 
   /**
-   * Gửi một tin nhắn có định dạng vào nhóm và ghi lại vào hội thoại tương ứng để
-   * tin vẫn hiện trong hộp thư. Không đồng bộ lịch sử nhóm như `openChat` vì khi
-   * phát tin hàng loạt việc đó quá nặng.
+   * Gửi một tin nhắn có định dạng (kèm ảnh nếu có) vào nhóm và ghi lại vào hội
+   * thoại tương ứng để tin vẫn hiện trong hộp thư. Không đồng bộ lịch sử nhóm
+   * như `openChat` vì khi phát tin hàng loạt việc đó quá nặng.
+   *
+   * Khi có cả định dạng chữ và ảnh thì chữ được gửi thành một tin riêng: zca-js
+   * bỏ `styles` nếu chữ bị dùng làm chú thích cho ảnh.
    */
-  async sendGroupRichMessage(input: { accountId: string; groupId: string; groupName?: string; text: string; styles?: Style[]; senderId?: string | null }) {
+  async sendGroupRichMessage(input: { accountId: string; groupId: string; groupName?: string; text: string; styles?: Style[]; imageUrls?: string[]; senderId?: string | null }) {
     const account = await this.account(input.accountId);
     const api = this.session(input.accountId).api;
     if (!api) throw new BadRequestException('Tài khoản Zalo chưa kết nối');
+
+    const imageUrls = input.imageUrls ?? [];
+    const attachments = await Promise.all(imageUrls.map((url) => existingUploadPath(url)));
+    const text = input.text ?? '';
+    const styles = input.styles?.length ? input.styles : undefined;
+    if (!text.trim() && attachments.length === 0) throw new BadRequestException('Tin nhắn phải có nội dung hoặc ảnh');
+
     const channel = await this.channel(account);
     const zaloUserId = `group:${input.groupId}`;
     const name = input.groupName?.trim() || `Nhóm Zalo ${input.groupId}`;
@@ -855,23 +866,47 @@ export class PersonalZaloAccountsService implements OnModuleDestroy {
       update: {},
       create: { customerId: customer.id, zaloOAId: channel.id, status: 'PROCESSING' },
     });
-    const message = await this.prisma.message.create({
-      data: { conversationId: conversation.id, direction: 'OUT', type: 'TEXT', content: input.text, senderId: input.senderId ?? undefined, status: 'SENDING' },
-    });
+
+    // Chữ gửi kèm ảnh thành chú thích chỉ khi đúng một ảnh và chữ không có định dạng.
+    const captionMode = attachments.length === 1 && !styles && Boolean(text.trim());
+    const records = await this.prisma.$transaction([
+      ...(text.trim() && !captionMode
+        ? [this.prisma.message.create({ data: { conversationId: conversation.id, direction: 'OUT' as const, type: 'TEXT' as const, content: text, senderId: input.senderId ?? undefined, status: 'SENDING' as const } })]
+        : []),
+      ...imageUrls.map((url, index) => this.prisma.message.create({
+        data: {
+          conversationId: conversation.id,
+          direction: 'OUT' as const,
+          type: 'IMAGE' as const,
+          content: captionMode || index > 0 ? text : '',
+          attachmentUrl: url,
+          senderId: input.senderId ?? undefined,
+          status: 'SENDING' as const,
+        },
+      })),
+    ]);
+    const messageIds = records.map((record) => record.id);
+
+    const republish = async (status: 'SENT' | 'FAILED') => {
+      await this.prisma.message.updateMany({ where: { id: { in: messageIds } }, data: { status } });
+      const refreshed = await this.prisma.message.findMany({ where: { id: { in: messageIds } }, include: { sender: { select: { id: true, name: true, avatar: true } } }, orderBy: { sentAt: 'asc' } });
+      for (const item of refreshed) this.gateway.emitNewMessage(conversation.id, item);
+    };
+
     try {
-      await api.sendMessage({ msg: input.text, ...(input.styles?.length ? { styles: input.styles } : {}) }, input.groupId, ThreadType.Group);
+      if (text.trim() && !captionMode) await api.sendMessage({ msg: text, ...(styles ? { styles } : {}) }, input.groupId, ThreadType.Group);
+      if (attachments.length) {
+        await api.sendMessage({ msg: captionMode ? text : '', attachments }, input.groupId, ThreadType.Group);
+      }
     } catch (error) {
-      await this.prisma.message.update({ where: { id: message.id }, data: { status: 'FAILED' } });
-      const current = await this.prisma.message.findUnique({ where: { id: message.id }, include: { sender: { select: { id: true, name: true, avatar: true } } } });
-      if (current) this.gateway.emitNewMessage(conversation.id, current);
+      await republish('FAILED');
       throw error;
     }
-    await this.prisma.message.update({ where: { id: message.id }, data: { status: 'SENT' } });
+
+    await republish('SENT');
     await this.prisma.conversation.update({ where: { id: conversation.id }, data: { lastMessageAt: new Date(), status: 'PROCESSING' } });
-    await this.prisma.zaloOA.updateMany({ where: { id: channel.id }, data: { messagesSentToday: { increment: 1 } } });
-    const sent = await this.prisma.message.findUnique({ where: { id: message.id }, include: { sender: { select: { id: true, name: true, avatar: true } } } });
-    if (sent) this.gateway.emitNewMessage(conversation.id, sent);
-    return { conversationId: conversation.id, messageId: message.id };
+    await this.prisma.zaloOA.updateMany({ where: { id: channel.id }, data: { messagesSentToday: { increment: messageIds.length } } });
+    return { conversationId: conversation.id, messageIds };
   }
 
   async sendText(userId: string, text: string, accountId?: string) {

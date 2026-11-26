@@ -243,6 +243,7 @@ model GroupBroadcast {
   account   PersonalZaloAccount    @relation(fields: [accountId], references: [id], onDelete: Cascade)
   createdBy User?                  @relation("GroupBroadcastAuthor", fields: [createdById], references: [id], onDelete: SetNull)
   targets   GroupBroadcastTarget[]
+  images    GroupBroadcastImage[]
   runs      GroupBroadcastRun[]
 
   @@index([accountId])
@@ -260,6 +261,19 @@ model GroupBroadcastTarget {
 
   @@unique([broadcastId, groupId])
   @@index([broadcastId])
+}
+
+/// Ảnh gửi kèm tin, giữ đúng thứ tự người dùng đã chọn.
+model GroupBroadcastImage {
+  id          String @id @default(cuid())
+  broadcastId String
+  url         String
+  name        String
+  order       Int    @default(0)
+
+  broadcast GroupBroadcast @relation(fields: [broadcastId], references: [id], onDelete: Cascade)
+
+  @@index([broadcastId, order])
 }
 
 model GroupBroadcastRun {

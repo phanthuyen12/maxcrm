@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { ArrayMaxSize, ArrayMinSize, IsArray, IsEnum, IsISO8601, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsEnum, IsISO8601, IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
 import { GroupBroadcastRepeat } from '@prisma/client';
 
 export class GroupBroadcastTargetDto {
@@ -11,6 +11,18 @@ export class GroupBroadcastTargetDto {
   @IsString()
   @MaxLength(180)
   groupName?: string;
+}
+
+export class GroupBroadcastImageDto {
+  /** URL do endpoint tải ảnh trả về; chỉ nhận tệp trong thư mục uploads. */
+  @IsString()
+  @Matches(/^\/uploads\/[A-Za-z0-9][A-Za-z0-9._-]{0,180}$/, { message: 'Ảnh phải là tệp đã tải lên qua hệ thống' })
+  url: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  name?: string;
 }
 
 export class UpsertGroupBroadcastDto {
@@ -25,9 +37,16 @@ export class UpsertGroupBroadcastDto {
 
   /** HTML soạn từ editor; server tự chuyển sang text + style của Zalo. */
   @IsString()
-  @MinLength(1)
   @MaxLength(20000)
   contentHtml: string;
+
+  /** Ảnh gửi kèm, theo đúng thứ tự muốn gửi. */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(10)
+  @ValidateNested({ each: true })
+  @Type(() => GroupBroadcastImageDto)
+  images?: GroupBroadcastImageDto[];
 
   @IsArray()
   @ArrayMinSize(1)

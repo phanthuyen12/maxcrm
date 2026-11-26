@@ -19,6 +19,8 @@ export type BroadcastRun = {
   results: BroadcastRunResult[];
 };
 
+export type BroadcastImage = { url: string; name: string };
+
 export type GroupBroadcast = {
   id: string;
   name: string;
@@ -36,6 +38,7 @@ export type GroupBroadcast = {
   createdBy: { id: string; name: string; avatar: string | null } | null;
   createdAt: string;
   targets: Array<{ groupId: string; groupName: string }>;
+  images: BroadcastImage[];
   latestRun: BroadcastRun | null;
 };
 
@@ -46,6 +49,7 @@ export type BroadcastPayload = {
   name: string;
   contentHtml: string;
   targets: Array<{ groupId: string; groupName: string }>;
+  images: BroadcastImage[];
   scheduledAt: string;
   repeat: BroadcastRepeat;
   repeatDays?: number[];
@@ -70,6 +74,17 @@ export function useZaloGroups(accountId: string) {
     enabled: Boolean(accountId),
     staleTime: 5 * 60 * 1000,
     retry: false,
+  });
+}
+
+/** Tải ảnh gửi kèm lên trước khi lưu lịch. */
+export function useUploadBroadcastImages() {
+  return useMutation({
+    mutationFn: (files: File[]) => {
+      const form = new FormData();
+      for (const file of files) form.append('files', file);
+      return api.post<Array<BroadcastImage & { size: number }>>('/group-broadcasts/images', form, api.slow(120000));
+    },
   });
 }
 

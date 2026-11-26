@@ -4,6 +4,7 @@ import type { Style } from 'zca-js';
 import { PrismaService } from '../prisma/prisma.service';
 import { PersonalZaloAccountsService } from '../zalo-personal/personal-zalo-accounts.service';
 import { htmlToZaloMessage } from '../zalo-personal/html-message';
+import { existingUploadPath } from '../zalo-personal/upload-path';
 import { UpsertGroupBroadcastDto } from './dto/upsert-group-broadcast.dto';
 import { firstRunAt, nextRunAfter, parseWeekdays, serializeWeekdays } from './group-broadcast.schedule';
 
@@ -11,6 +12,7 @@ type RunResultItem = { groupId: string; groupName: string; status: 'pending' | '
 
 const BROADCAST_INCLUDE = {
   targets: { orderBy: { groupName: 'asc' } },
+  images: { orderBy: { order: 'asc' } },
   createdBy: { select: { id: true, name: true, avatar: true } },
   account: { select: { id: true, name: true, status: true } },
   runs: { orderBy: { startedAt: 'desc' }, take: 5 },
@@ -53,7 +55,7 @@ export class GroupBroadcastService {
   }
 
   async create(dto: UpsertGroupBroadcastDto, userId: string, role: string) {
-    const { content, targets, nextRun, repeat, scheduledAt } = await this.validate(dto, userId, role);
+    const { content, targets, images, nextRun, repeat, scheduledAt } = await this.validate(dto, userId, role);
     const broadcast = await this.prisma.groupBroadcast.create({
       data: {
         accountId: dto.accountId,
@@ -69,6 +71,7 @@ export class GroupBroadcastService {
         status: GroupBroadcastStatus.SCHEDULED,
         createdById: userId,
         targets: { create: targets },
+        images: { create: images },
       },
       include: BROADCAST_INCLUDE,
     });
@@ -78,9 +81,10 @@ export class GroupBroadcastService {
   async update(id: string, dto: UpsertGroupBroadcastDto, userId: string, role: string) {
     const existing = await this.load(id, userId, role);
     if (existing.status === GroupBroadcastStatus.RUNNING) throw new BadRequestException('Lịch đang gửi, hãy chờ gửi xong rồi sửa');
-    const { content, targets, nextRun, repeat, scheduledAt } = await this.validate(dto, userId, role);
+    const { content, targets, images, nextRun, repeat, scheduledAt } = await this.validate(dto, userId, role);
     const broadcast = await this.prisma.$transaction(async (tx) => {
       await tx.groupBroadcastTarget.deleteMany({ where: { broadcastId: id } });
+      await tx.groupBroadcastImage.deleteMany({ where: { broadcastId: id } });
       return tx.groupBroadcast.update({
         where: { id },
         data: {
@@ -96,6 +100,7 @@ export class GroupBroadcastService {
           intervalMs: dto.intervalMs ?? 2000,
           status: GroupBroadcastStatus.SCHEDULED,
           targets: { create: targets },
+          images: { create: images },
         },
         include: BROADCAST_INCLUDE,
       });
@@ -193,7 +198,7 @@ export class GroupBroadcastService {
   private async execute(id: string, options: { keepSchedule: boolean; restoreStatus?: GroupBroadcastStatus }) {
     this.running.add(id);
     try {
-      const broadcast = await this.prisma.groupBroadcast.findUnique({ where: { id }, include: { targets: true } });
+      const broadcast = await this.prisma.groupBroadcast.findUnique({ where: { id }, include: { targets: true, images: { orderBy: { order: 'asc' } } } });
       if (!broadcast) throw new NotFoundException('Không tìm thấy lịch gửi');
       const results: RunResultItem[] = broadcast.targets.map((target) => ({ groupId: target.groupId, groupName: target.groupName, status: 'pending' }));
       const run = await this.prisma.groupBroadcastRun.create({
@@ -204,6 +209,7 @@ export class GroupBroadcastService {
       let failed = 0;
       const connected = this.accounts.isConnected(broadcast.accountId);
       const styles = (broadcast.styles ?? []) as unknown as Style[];
+      const imageUrls = broadcast.images.map((image) => image.url);
       for (let index = 0; index < results.length; index++) {
         const result = results[index];
         if (!connected) {
@@ -219,6 +225,7 @@ export class GroupBroadcastService {
             groupName: result.groupName,
             text: broadcast.contentText,
             styles,
+            imageUrls,
             senderId: broadcast.createdById,
           });
           result.status = 'sent';
@@ -270,7 +277,21 @@ export class GroupBroadcastService {
 
   private async validate(dto: UpsertGroupBroadcastDto, userId: string, role: string) {
     const content = htmlToZaloMessage(dto.contentHtml ?? '');
-    if (!content.text.trim()) throw new BadRequestException('Nội dung tin nhắn đang trống');
+
+    // Ảnh phải tồn tại ngay lúc lưu, để lỗi lộ ra trước khi tới mốc gửi.
+    const images = [...new Map((dto.images ?? [])
+      .filter((image) => image.url?.trim())
+      .map((image) => [image.url.trim(), image])).values()]
+      .map((image, order) => ({ url: image.url.trim(), name: image.name?.trim() || `Ảnh ${order + 1}`, order }));
+    for (const image of images) {
+      try {
+        await existingUploadPath(image.url);
+      } catch (error) {
+        throw new BadRequestException(error instanceof Error ? error.message : 'Ảnh gửi kèm không hợp lệ');
+      }
+    }
+
+    if (!content.text.trim() && images.length === 0) throw new BadRequestException('Hãy nhập nội dung hoặc chọn ít nhất một ảnh');
 
     const targets = [...new Map(dto.targets
       .filter((target) => target.groupId?.trim())
@@ -287,7 +308,7 @@ export class GroupBroadcastService {
     const nextRun = firstRunAt(scheduledAt, repeat, weekdays);
     if (!nextRun) throw new BadRequestException('Thời điểm hẹn giờ đã trôi qua. Hãy chọn mốc trong tương lai.');
 
-    return { content, targets, nextRun, repeat, scheduledAt };
+    return { content, targets, images, nextRun, repeat, scheduledAt };
   }
 
   private async load(id: string, userId: string, role: string) {
@@ -316,6 +337,7 @@ export class GroupBroadcastService {
       createdBy: broadcast.createdBy,
       createdAt: broadcast.createdAt,
       targets: broadcast.targets.map((target) => ({ groupId: target.groupId, groupName: target.groupName })),
+      images: broadcast.images.map((image) => ({ url: image.url, name: image.name })),
       latestRun: latestRun && {
         id: latestRun.id,
         status: latestRun.status,
